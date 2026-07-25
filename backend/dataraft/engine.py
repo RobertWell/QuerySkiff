@@ -52,11 +52,11 @@ def _new_connection(ds: Dataset) -> duckdb.DuckDBPyConnection:
     conn.execute(f"SET s3_secret_access_key='{config.minio_secret_key}'")
     conn.execute(f"SET s3_use_ssl={'true' if config.minio_secure else 'false'}")
     conn.execute("SET s3_url_style='path'")
-    # the resolved dataset is exposed ONLY as `data`; the user SQL never names
-    # the real path. parameterizing the path isn't supported in a view DDL, but
-    # s3_uri is server-built from an allow-list-validated dataset (never user
-    # input), so it cannot be injected.
-    conn.execute(f"CREATE VIEW data AS SELECT * FROM read_parquet('{s3_uri(ds)}')")
+    # Expose the resolved dataset ONLY as `data`. The path is passed through the
+    # native read_parquet relation API — as a bound Python argument, NOT
+    # interpolated into a SQL string — so a crafted key (the dataset id is
+    # client-supplied) cannot break out of a string literal and inject SQL.
+    conn.read_parquet(s3_uri(ds)).create_view("data", replace=True)
     return conn
 
 

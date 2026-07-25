@@ -11,6 +11,7 @@ allowed buckets or point at a non-parquet object.
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass
 
 from minio import Minio
@@ -18,6 +19,10 @@ from minio import Minio
 from .config import config
 
 _SEP = "\x00"
+# object keys must be plain S3-style paths — no quotes/backslashes/control chars
+# that could matter to any downstream consumer (defence in depth alongside the
+# non-interpolated read_parquet path in engine.py).
+_SAFE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-/=]*$")
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,7 @@ def resolve_id(dataset_id: str) -> Dataset:
         raise ValueError("invalid dataset id") from exc
     if bucket not in config.allowed_buckets:
         raise ValueError("dataset not in an allowed bucket")
-    if ".." in key or key.startswith("/"):
+    if ".." in key or not _SAFE_KEY.match(key):
         raise ValueError("illegal key")
     is_folder = key.endswith("/")
     if not is_folder and not key.lower().endswith(".parquet"):
