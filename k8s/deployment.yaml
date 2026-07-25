@@ -1,0 +1,78 @@
+# Dataraft (HEL-90): one Deployment + one ClusterIP Service. External access is
+# ONLY through the existing gateway's /dataraft route (spec requirement) — no
+# NodePort, no ingress of its own. MinIO credentials come from the on-node
+# Secret dataraft-minio (read-only credential), never in git.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dataraft
+  namespace: dataraft
+  labels:
+    app: dataraft
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dataraft
+  template:
+    metadata:
+      labels:
+        app: dataraft
+    spec:
+      containers:
+        - name: dataraft
+          image: docker.io/roguerzzz123/dataraft:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5400
+          env:
+            - name: DATARAFT_BASE_PATH
+              value: /dataraft
+            - name: MINIO_ENDPOINT
+              value: minio.minio.svc.cluster.local:9000
+            - name: MINIO_SECURE
+              value: "false"
+            - name: DATARAFT_ALLOWED_BUCKETS
+              value: "stable-stock,model-results"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dataraft-minio
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dataraft-minio
+                  key: secret-key
+          readinessProbe:
+            httpGet:
+              path: /dataraft/health
+              port: 5400
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /dataraft/health
+              port: 5400
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 5Gi        # DuckDB memory_limit 4GB + headroom
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dataraft
+  namespace: dataraft
+spec:
+  type: ClusterIP
+  selector:
+    app: dataraft
+  ports:
+    - port: 5400
+      targetPort: 5400

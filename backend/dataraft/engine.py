@@ -44,7 +44,7 @@ def _new_connection(ds: Dataset) -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(database=":memory:")
     conn.execute(f"SET memory_limit='{config.memory_limit}'")
     conn.execute(f"SET temp_directory='{config.temp_dir}'")
-    conn.execute("SET enable_external_access=true")   # needed for httpfs->MinIO
+    # enable_external_access defaults to true and CANNOT be SET after startup
     conn.execute("INSTALL httpfs")
     conn.execute("LOAD httpfs")
     conn.execute(f"SET s3_endpoint='{config.minio_endpoint}'")
