@@ -82,8 +82,11 @@ def list_datasets() -> list[dict]:
     folders: dict[tuple[str, str], int] = {}
     for bucket in config.allowed_buckets:
         try:
-            objects = client.list_objects(bucket, recursive=True)
-        except Exception:  # noqa: BLE001 — a missing bucket shouldn't 500 the list
+            # materialize inside the try — list_objects is lazy, so an
+            # AccessDenied/missing-bucket error surfaces during iteration, not at
+            # the call. Skip such buckets rather than 500 the whole listing.
+            objects = list(client.list_objects(bucket, recursive=True))
+        except Exception:  # noqa: BLE001
             continue
         for obj in objects:
             if not obj.object_name.lower().endswith(".parquet"):

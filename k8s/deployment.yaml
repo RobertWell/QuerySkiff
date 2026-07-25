@@ -33,7 +33,7 @@ spec:
             - name: MINIO_SECURE
               value: "false"
             - name: DATARAFT_ALLOWED_BUCKETS
-              value: "stable-stock,model-results"
+              value: "model-results"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
