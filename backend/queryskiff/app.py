@@ -1,9 +1,9 @@
-"""Dataraft API + static host (HEL-90).
+"""QuerySkiff API + static host (HEL-90).
 
-Everything is served under the gateway base path (default /dataraft). The API
+Everything is served under the gateway base path (default /queryskiff). The API
 lives at {base}/api/...; the built React app is served for everything else so
 client-side routes survive a hard refresh. Authentication is entirely the
-gateway's job — Dataraft trusts that any request reaching it is already
+gateway's job — QuerySkiff trusts that any request reaching it is already
 authorized, and never sees MinIO credentials leave the server.
 """
 from __future__ import annotations
@@ -22,8 +22,8 @@ from .sqlsafety import UnsafeSQL
 BASE = config.base_path.rstrip("/")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="Dataraft", docs_url=None, redoc_url=None, openapi_url=None)
-api = FastAPI(title="Dataraft API", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="QuerySkiff", docs_url=None, redoc_url=None, openapi_url=None)
+api = FastAPI(title="QuerySkiff API", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @api.get("/datasets")

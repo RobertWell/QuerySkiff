@@ -110,7 +110,7 @@ export default function App() {
       <aside style={{ width: 320, borderRight: "1px solid #ddd", display: "flex",
                       flexDirection: "column", minWidth: 240 }}>
         <div style={{ padding: "10px 12px", borderBottom: "1px solid #eee" }}>
-          <b>Dataraft</b> <span style={{ color: "#888", fontSize: 12 }}>parquet SQL viewer</span>
+          <b>QuerySkiff</b> <span style={{ color: "#888", fontSize: 12 }}>parquet SQL viewer</span>
           <input
             placeholder="filter datasets…"
             value={filter}

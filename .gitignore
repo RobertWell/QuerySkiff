@@ -3,5 +3,5 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
-backend/dataraft/static/
+backend/queryskiff/static/
 .env

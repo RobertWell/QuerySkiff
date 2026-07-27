@@ -6,8 +6,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dataraft import datasets
-from dataraft.config import config
+from queryskiff import datasets
+from queryskiff.config import config
 
 
 def test_roundtrip_and_resolve_allowed():

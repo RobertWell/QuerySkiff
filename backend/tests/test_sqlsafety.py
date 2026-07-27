@@ -1,4 +1,4 @@
-"""SQL-safety tests (HEL-90) — the security boundary of Dataraft."""
+"""SQL-safety tests (HEL-90) — the security boundary of QuerySkiff."""
 import sys
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dataraft.sqlsafety import UnsafeSQL, has_limit, validate
+from queryskiff.sqlsafety import UnsafeSQL, has_limit, validate
 
 
 @pytest.mark.parametrize("sql", [

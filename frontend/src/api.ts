@@ -1,5 +1,5 @@
-// Dataraft API client — everything under the gateway base path.
-const API = "/dataraft/api";
+// QuerySkiff API client — everything under the gateway base path.
+const API = "/queryskiff/api";
 
 export interface DatasetInfo {
   dataset_id: string;

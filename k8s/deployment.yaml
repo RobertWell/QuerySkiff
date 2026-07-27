@@ -1,58 +1,58 @@
-# Dataraft (HEL-90): one Deployment + one ClusterIP Service. External access is
-# ONLY through the existing gateway's /dataraft route (spec requirement) — no
+# QuerySkiff (HEL-90): one Deployment + one ClusterIP Service. External access is
+# ONLY through the existing gateway's /queryskiff route (spec requirement) — no
 # NodePort, no ingress of its own. MinIO credentials come from the on-node
-# Secret dataraft-minio (read-only credential), never in git.
+# Secret queryskiff-minio (read-only credential), never in git.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dataraft
-  namespace: dataraft
+  name: queryskiff
+  namespace: queryskiff
   labels:
-    app: dataraft
+    app: queryskiff
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dataraft
+      app: queryskiff
   template:
     metadata:
       labels:
-        app: dataraft
+        app: queryskiff
     spec:
       containers:
-        - name: dataraft
-          image: docker.io/roguerzzz123/dataraft:latest
+        - name: queryskiff
+          image: docker.io/roguerzzz123/queryskiff:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5400
           env:
-            - name: DATARAFT_BASE_PATH
-              value: /dataraft
+            - name: QUERYSKIFF_BASE_PATH
+              value: /queryskiff
             - name: MINIO_ENDPOINT
               value: minio.minio.svc.cluster.local:9000
             - name: MINIO_SECURE
               value: "false"
-            - name: DATARAFT_ALLOWED_BUCKETS
+            - name: QUERYSKIFF_ALLOWED_BUCKETS
               value: "model-results"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: dataraft-minio
+                  name: queryskiff-minio
                   key: access-key
             - name: MINIO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: dataraft-minio
+                  name: queryskiff-minio
                   key: secret-key
           readinessProbe:
             httpGet:
-              path: /dataraft/health
+              path: /queryskiff/health
               port: 5400
             initialDelaySeconds: 5
             periodSeconds: 15
           livenessProbe:
             httpGet:
-              path: /dataraft/health
+              path: /queryskiff/health
               port: 5400
             initialDelaySeconds: 20
             periodSeconds: 30
@@ -67,12 +67,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dataraft
-  namespace: dataraft
+  name: queryskiff
+  namespace: queryskiff
 spec:
   type: ClusterIP
   selector:
-    app: dataraft
+    app: queryskiff
   ports:
     - port: 5400
       targetPort: 5400
