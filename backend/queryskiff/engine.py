@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import duckdb
 
 from .config import config
-from .datasets import Dataset, s3_uri
+from .datasets import Dataset, redact, s3_uri
 from .sqlsafety import has_limit, validate
 
 _semaphore = threading.BoundedSemaphore(config.max_running_queries)
@@ -103,7 +103,8 @@ def _run(q: Query, ds: Dataset) -> None:
         if q._cancel.is_set():
             q.status = "cancelled"
         else:
-            q.status, q.error = "error", str(exc).splitlines()[0][:500]
+            # redact any s3://bucket/key the DuckDB/MinIO error may echo (HEL-90)
+            q.status, q.error = "error", redact(str(exc).splitlines()[0])[:500]
     finally:
         _semaphore.release()
 

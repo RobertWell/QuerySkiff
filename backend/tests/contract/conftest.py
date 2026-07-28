@@ -119,15 +119,17 @@ def client(tmp_path_factory) -> Client:
 
     fid = encode_id(FIXTURE_BUCKET, FIXTURE_KEY)
 
-    # MinIO seams -> local fixture. resolve_id/validate/engine stay REAL.
+    # MinIO seams -> local fixture. resolve_id/validate/engine stay REAL. The
+    # shapes here MIRROR the real datasets.py (HEL-90 browser-safe contract): a
+    # logical label only, no bucket / key / etag.
     datasets.list_datasets = lambda: [{
-        "dataset_id": fid, "name": f"{FIXTURE_BUCKET}/{FIXTURE_KEY}",
-        "bucket": FIXTURE_BUCKET, "kind": "file", "size": fx.stat().st_size,
+        "dataset_id": fid, "name": datasets.display_label(FIXTURE_KEY, False),
+        "kind": "file", "size": fx.stat().st_size,
         "modified": "2026-07-27T00:00:00+00:00",
     }]
     datasets.object_metadata = lambda ds: {
-        "kind": "file", "name": ds.display_name, "size": fx.stat().st_size,
-        "modified": "2026-07-27T00:00:00+00:00", "etag": "fixture",
+        "kind": "file", "name": ds.label, "size": fx.stat().st_size,
+        "modified": "2026-07-27T00:00:00+00:00",
         "content_type": "application/octet-stream",
     }
     real_new_connection = engine._new_connection

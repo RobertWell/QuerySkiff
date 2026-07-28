@@ -33,8 +33,36 @@ class Dataset:
     is_folder: bool
 
     @property
-    def display_name(self) -> str:
-        return f"{self.bucket}/{self.key}"
+    def label(self) -> str:
+        """A logical, browser-safe display name (HEL-90) — the final path segment
+        only, never the bucket or the internal key structure."""
+        return display_label(self.key, self.is_folder)
+
+
+def display_label(key: str, is_folder: bool) -> str:
+    """Logical display label from an object key: the final segment, minus the
+    `.parquet` extension for files. No bucket, no internal path — so the browser
+    never learns the storage layout."""
+    k = key.rstrip("/")
+    base = k.rsplit("/", 1)[-1] if "/" in k else k
+    if not is_folder and base.lower().endswith(".parquet"):
+        base = base[: -len(".parquet")]
+    return base or "dataset"
+
+
+_S3_RE = re.compile(r"s3://[^\s'\"]+")
+
+
+def redact(msg: str | None) -> str:
+    """Strip internal storage identifiers (s3://bucket/key and bare bucket names)
+    from any error text before it reaches the browser (HEL-90). Defence in depth
+    so a DuckDB/MinIO error can't leak the path the opaque id hides."""
+    if not msg:
+        return msg or ""
+    out = _S3_RE.sub("<dataset>", msg)
+    for b in config.allowed_buckets:
+        out = out.replace(b, "<dataset>")
+    return out
 
 
 def _client() -> Minio:
@@ -93,8 +121,9 @@ def list_datasets() -> list[dict]:
                 continue
             out.append({
                 "dataset_id": encode_id(bucket, obj.object_name),
-                "name": f"{bucket}/{obj.object_name}",
-                "bucket": bucket, "kind": "file",
+                # browser-safe: opaque id + logical label only — no bucket, no key
+                "name": display_label(obj.object_name, False),
+                "kind": "file",
                 "size": obj.size,
                 "modified": obj.last_modified.isoformat() if obj.last_modified else None,
             })
@@ -105,8 +134,8 @@ def list_datasets() -> list[dict]:
         if n > 1:
             out.append({
                 "dataset_id": encode_id(bucket, prefix),
-                "name": f"{bucket}/{prefix} ({n} parts)",
-                "bucket": bucket, "kind": "folder", "parts": n,
+                "name": f"{display_label(prefix, True)} ({n} parts)",
+                "kind": "folder", "parts": n,
                 "size": None, "modified": None,
             })
     out.sort(key=lambda d: d["name"])
@@ -115,12 +144,14 @@ def list_datasets() -> list[dict]:
 
 def object_metadata(ds: Dataset) -> dict:
     if ds.is_folder:
-        return {"kind": "folder", "name": ds.display_name}
+        return {"kind": "folder", "name": ds.label}
     client = _client()
     st = client.stat_object(ds.bucket, ds.key)
+    # browser-safe metadata only: logical label + size/modified. No bucket, key,
+    # etag (internal storage id) or object path (HEL-90).
     return {
-        "kind": "file", "name": ds.display_name,
+        "kind": "file", "name": ds.label,
         "size": st.size,
         "modified": st.last_modified.isoformat() if st.last_modified else None,
-        "etag": st.etag, "content_type": st.content_type,
+        "content_type": st.content_type,
     }
