@@ -12,7 +12,8 @@ import os
 
 import pytest
 
-from .conftest import DEFAULT_LIMIT, MAX_RESULT_ROWS, FIXTURE_ROWS
+from .conftest import (DEFAULT_LIMIT, FIXTURE_BUCKET, FIXTURE_KEY,
+                       FIXTURE_ROWS, MAX_RESULT_ROWS)
 
 REMOTE = bool(os.getenv("QUERYSKIFF_CONTRACT_URL"))
 hermetic_only = pytest.mark.skipif(
@@ -59,8 +60,13 @@ def test_dataset_listing_shape(client):
     code, body = client.get("/api/datasets")
     assert code == 200 and isinstance(body["datasets"], list)
     for d in body["datasets"]:
-        assert set(d) >= {"dataset_id", "name", "bucket", "kind", "size", "modified"}
+        assert set(d) >= {"dataset_id", "name", "kind", "size", "modified"}
         assert d["kind"] in ("file", "folder")
+        # HEL-90: the browser gets an opaque id + a logical label ONLY — never the
+        # bucket or the object key/path.
+        assert "bucket" not in d
+        assert "/" not in d["name"] or d["kind"] == "folder"   # folder label is "<name> (N parts)"
+        assert ".parquet" not in d["name"]
         # opaque id: URL-safe, no padding, never contains the raw bucket/key
         assert "/" not in d["dataset_id"] and "=" not in d["dataset_id"]
         if d["kind"] == "folder":
@@ -79,10 +85,26 @@ def test_metadata_shape(client, fixture_dataset_id):
     assert code == 200
     assert body["kind"] in ("file", "folder") and body["name"]
     if body["kind"] == "file":
-        assert set(body) >= {"size", "modified", "etag", "content_type"}
-    # never leak transport details
-    for banned in ("s3://", "http://", "https://", "access", "secret"):
-        assert banned not in str(body).lower() or banned == "access"  # 'access' only via content_type wording
+        assert set(body) >= {"size", "modified", "content_type"}
+    # HEL-90: metadata is safe display fields only — no bucket, key, etag or path.
+    assert "bucket" not in body and "etag" not in body
+    assert "/" not in body["name"] and ".parquet" not in body["name"]
+    for banned in ("s3://", "http://", "https://", "secret", "minio"):
+        assert banned not in str(body).lower()
+
+
+def test_no_endpoint_exposes_bucket_or_object_key(client, fixture_dataset_id):
+    """HEL-90 acceptance: the dataset, schema and metadata endpoints must never
+    reveal the internal bucket name or object key/path to the browser."""
+    leaks = (FIXTURE_BUCKET, FIXTURE_KEY, FIXTURE_KEY.rsplit("/", 1)[0], "s3://", ".parquet")
+    for path in ("/api/datasets",
+                 f"/api/datasets/{fixture_dataset_id}/schema",
+                 f"/api/datasets/{fixture_dataset_id}/metadata"):
+        code, body = client.get(path)
+        assert code == 200, path
+        blob = str(body).lower()
+        for token in leaks:
+            assert token.lower() not in blob, f"{path} leaked {token!r}"
 
 
 @pytest.mark.parametrize("bad_id", [

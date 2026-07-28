@@ -44,7 +44,8 @@ def dataset_schema(dataset_id: str):
     try:
         return {"schema": engine.schema_of(ds)}
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"could not read schema: {exc}") from exc
+        raise HTTPException(status_code=502,
+                            detail=f"could not read schema: {datasets.redact(str(exc))}") from exc
 
 
 @api.get("/datasets/{dataset_id}/metadata")
@@ -53,7 +54,8 @@ def dataset_metadata(dataset_id: str):
     try:
         return datasets.object_metadata(ds)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"could not read metadata: {exc}") from exc
+        raise HTTPException(status_code=502,
+                            detail=f"could not read metadata: {datasets.redact(str(exc))}") from exc
 
 
 @api.post("/queries")
