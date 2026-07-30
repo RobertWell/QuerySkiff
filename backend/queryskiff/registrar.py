@@ -19,10 +19,19 @@ workspace aliases onto registered tables server-side.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 
 from .config import config
 from .datasets import Dataset, s3_uri
+
+# A column name is safe to interpolate into DDL only if it is a plain SQL
+# identifier. Parquet footers are attacker-controllable (anyone who can land a
+# file in an allowed bucket controls the column names), so this is a security
+# boundary, not a nicety — a name like `x" ) WITH (...) --` must be rejected,
+# not escaped-and-hoped.
+_SAFE_COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_DECIMAL = re.compile(r"^DECIMAL\(\d{1,2},\d{1,2}\)$")
 
 _lock = threading.Lock()
 # dataset_id -> (source_etag, table_name); in-memory: re-sniffing after a pod
@@ -55,6 +64,9 @@ def table_name(ds: Dataset) -> str:
 def _map_type(duck_type: str) -> str:
     t = duck_type.strip().upper()
     if t.startswith("DECIMAL"):
+        # strict shape only — never pass an arbitrary string through to DDL
+        if not _DECIMAL.match(t):
+            raise RegistrationError(f"unsupported decimal type: {duck_type}")
         return t.lower()
     mapped = _TYPE_MAP.get(t)
     if not mapped:
@@ -62,13 +74,30 @@ def _map_type(duck_type: str) -> str:
     return mapped
 
 
+def _safe_column(name: str) -> str:
+    if not _SAFE_COLUMN.match(name):
+        # do not echo the raw name into the error (it reaches the browser)
+        raise RegistrationError("dataset has a column name that cannot be registered")
+    return name
+
+
 def sniff_schema(ds: Dataset) -> list[tuple[str, str]]:
-    """[(column, trino_type)] from the parquet footer via DuckDB DESCRIBE."""
+    """[(column, trino_type)] from the parquet footer via DuckDB DESCRIBE.
+
+    Column names AND types are validated against strict allowlists here — the
+    footer is untrusted input, and these values are interpolated into CREATE
+    TABLE DDL downstream (Trino DDL has no bound-parameter form for identifiers/
+    types), so validation is the only safe gate."""
     from . import engine as duck_engine
     rows = duck_engine.schema_of(ds)          # column_name / column_type dicts
     out = []
+    seen = set()
     for r in rows:
-        out.append((str(r["column_name"]), _map_type(str(r["column_type"]))))
+        col = _safe_column(str(r["column_name"]))
+        if col.lower() in seen:
+            raise RegistrationError("dataset has duplicate column names")
+        seen.add(col.lower())
+        out.append((col, _map_type(str(r["column_type"]))))
     if not out:
         raise RegistrationError("dataset has no columns")
     return out
@@ -87,12 +116,22 @@ def _source_etag(ds: Dataset) -> str:
     return client.stat_object(ds.bucket, ds.key).etag or "unknown"
 
 
+def _safe_location(loc: str) -> str:
+    """external_location interpolates into a single-quoted DDL string. ds.key is
+    already `_SAFE_KEY`-validated at resolve_id time (no quotes possible) and
+    the managed path uses a server-generated hash, so a quote cannot occur here
+    — assert that invariant and double any quote as belt-and-braces."""
+    if not re.match(r"^s3://[A-Za-z0-9._\-/]+$", loc):
+        raise RegistrationError("dataset path is not registrable")
+    return loc.replace("'", "''")
+
+
 def _materialize(ds: Dataset, tname: str) -> str:
     """Ensure the dataset lives in a directory Trino can bind to; return the
     external_location. Loose file -> server-side copy into the managed prefix
     (no data download); folder dataset -> its own prefix, in place."""
     if ds.is_folder:
-        return f"s3://{ds.bucket}/{ds.key}"
+        return _safe_location(f"s3://{ds.bucket}/{ds.key}")
     from minio import Minio
     from minio.commonconfig import CopySource
     client = Minio(config.minio_endpoint, access_key=config.minio_access_key,
@@ -100,7 +139,8 @@ def _materialize(ds: Dataset, tname: str) -> str:
     dst_key = f"{config.trino_managed_prefix}{tname}/part-0.parquet"
     client.copy_object(config.trino_managed_bucket, dst_key,
                        CopySource(ds.bucket, ds.key))
-    return f"s3://{config.trino_managed_bucket}/{config.trino_managed_prefix}{tname}/"
+    return _safe_location(
+        f"s3://{config.trino_managed_bucket}/{config.trino_managed_prefix}{tname}/")
 
 
 def ensure_registered(trino_conn_factory, ds: Dataset) -> str:
