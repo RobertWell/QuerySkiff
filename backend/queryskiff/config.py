@@ -58,7 +58,12 @@ class Config:
 
     default_limit: int = _int("QUERYSKIFF_DEFAULT_LIMIT", 500)
     max_result_rows: int = _int("QUERYSKIFF_MAX_RESULT_ROWS", 10_000)
-    max_running_queries: int = _int("QUERYSKIFF_MAX_RUNNING_QUERIES", 4)
+    # HEL-112 multi-user: DuckDB's low cap protects per-process memory; under
+    # Trino the engine governs memory/queueing globally, so this pod can admit
+    # far more in-flight requests (override explicitly to tune either way).
+    max_running_queries: int = _int(
+        "QUERYSKIFF_MAX_RUNNING_QUERIES",
+        16 if _env("QUERYSKIFF_ENGINE", "duckdb") == "trino" else 4)
     timeout_seconds: int = _int("QUERYSKIFF_TIMEOUT_SECONDS", 60)
     memory_limit: str = _env("QUERYSKIFF_MEMORY_LIMIT", "4GB")
     temp_dir: str = _env("QUERYSKIFF_TEMP_DIR", "/tmp/queryskiff-duckdb")
