@@ -45,8 +45,14 @@ def _strip_explain(sql: str) -> tuple[str, bool]:
     return s, False
 
 
-def validate(sql: str, dialect: str = "duckdb") -> str:
-    """Return the normalized SQL if safe; raise UnsafeSQL otherwise."""
+def validate(sql: str, dialect: str = "duckdb",
+             allowed_tables: frozenset[str] | set[str] = frozenset({"data"})) -> str:
+    """Return the normalized SQL if safe; raise UnsafeSQL otherwise.
+
+    `allowed_tables` is the set of logical table names the query may reference
+    (HEL-112: the workspace's registered aliases; default = the legacy single
+    dataset exposed as `data`). Names the query introduces itself (CTEs,
+    subquery aliases) are always additionally allowed."""
     if not sql or not sql.strip():
         raise UnsafeSQL("empty query")
 
@@ -88,9 +94,9 @@ def validate(sql: str, dialect: str = "duckdb") -> str:
             if name in BANNED_FUNCTIONS:
                 raise UnsafeSQL(f"forbidden function: {name}")
 
-    # only the logical table `data` may be referenced — plus names introduced by
-    # the query itself (CTEs and subquery/table aliases).
-    local_names = {"data"}
+    # only the allowed logical tables may be referenced — plus names introduced
+    # by the query itself (CTEs and subquery/table aliases).
+    local_names = {t.lower() for t in allowed_tables}
     for cte in root.find_all(exp.CTE):
         if cte.alias:
             local_names.add(cte.alias.lower())
@@ -99,7 +105,9 @@ def validate(sql: str, dialect: str = "duckdb") -> str:
             local_names.add(alias.name.lower())
     for tbl in root.find_all(exp.Table):
         if tbl.name.lower() not in local_names:
-            raise UnsafeSQL(f"only the table `data` may be queried (found {tbl.name!r})")
+            allowed = ", ".join(sorted(allowed_tables))
+            raise UnsafeSQL(
+                f"only these tables may be queried: {allowed} (found {tbl.name!r})")
 
     return sql.strip().rstrip(";")
 

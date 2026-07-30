@@ -24,8 +24,10 @@ _semaphore = threading.BoundedSemaphore(config.max_running_queries)
 @dataclass
 class Query:
     id: str
-    dataset_id: str
+    dataset_id: str                  # first dataset (legacy single-dataset field)
     sql: str
+    dataset_ids: list[str] = field(default_factory=list)   # HEL-112 workspace
+    aliases: list[str] = field(default_factory=list)
     status: str = "pending"          # pending|running|done|error|cancelled
     error: str | None = None
     columns: list[str] = field(default_factory=list)
@@ -40,7 +42,7 @@ _queries: dict[str, Query] = {}
 _lock = threading.Lock()
 
 
-def _new_connection(ds: Dataset) -> duckdb.DuckDBPyConnection:
+def _new_connection(entries: list[tuple[Dataset, str]]) -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(database=":memory:")
     conn.execute(f"SET memory_limit='{config.memory_limit}'")
     conn.execute(f"SET temp_directory='{config.temp_dir}'")
@@ -52,26 +54,34 @@ def _new_connection(ds: Dataset) -> duckdb.DuckDBPyConnection:
     conn.execute(f"SET s3_secret_access_key='{config.minio_secret_key}'")
     conn.execute(f"SET s3_use_ssl={'true' if config.minio_secure else 'false'}")
     conn.execute("SET s3_url_style='path'")
-    # Expose the resolved dataset ONLY as `data`. The path is passed through the
-    # native read_parquet relation API — as a bound Python argument, NOT
-    # interpolated into a SQL string — so a crafted key (the dataset id is
-    # client-supplied) cannot break out of a string literal and inject SQL.
-    conn.read_parquet(s3_uri(ds)).create_view("data", replace=True)
+    # Expose each resolved dataset ONLY under its logical alias (`data` for the
+    # legacy single-dataset flow). Paths go through the native read_parquet
+    # relation API — as bound Python arguments, NOT interpolated into a SQL
+    # string — so a crafted key (the dataset id is client-supplied) cannot
+    # break out of a string literal and inject SQL. Alias names are validated
+    # upstream (workspace.resolve_entries) to plain identifiers.
+    for ds, alias in entries:
+        conn.read_parquet(s3_uri(ds)).create_view(alias, replace=True)
     return conn
 
 
-def create_query(ds: Dataset, sql: str) -> Query:
-    safe = validate(sql)                       # raises UnsafeSQL
+def create_query(entries: list[tuple[Dataset, str]], sql: str) -> Query:
+    """HEL-112: run `sql` over a workspace of (dataset, alias) views. The
+    legacy single-dataset flow is [(ds, 'data')]."""
+    aliases = frozenset(a for _, a in entries)
+    safe = validate(sql, allowed_tables=aliases)   # raises UnsafeSQL
     if not has_limit(safe):
         safe = f"SELECT * FROM ({safe}) AS _sub LIMIT {config.default_limit}"
-    q = Query(id=uuid.uuid4().hex, dataset_id=ds.dataset_id, sql=safe)
+    q = Query(id=uuid.uuid4().hex, dataset_id=entries[0][0].dataset_id, sql=safe,
+              dataset_ids=[d.dataset_id for d, _ in entries],
+              aliases=[a for _, a in entries])
     with _lock:
         _queries[q.id] = q
-    threading.Thread(target=_run, args=(q, ds), daemon=True).start()
+    threading.Thread(target=_run, args=(q, entries), daemon=True).start()
     return q
 
 
-def _run(q: Query, ds: Dataset) -> None:
+def _run(q: Query, entries: list[tuple[Dataset, str]]) -> None:
     acquired = _semaphore.acquire(timeout=config.timeout_seconds)
     if not acquired:
         q.status, q.error = "error", "server busy (max concurrent queries)"
@@ -81,7 +91,7 @@ def _run(q: Query, ds: Dataset) -> None:
             q.status = "cancelled"
             return
         q.status = "running"
-        conn = _new_connection(ds)
+        conn = _new_connection(entries)
         q._conn = conn
         timer = threading.Timer(config.timeout_seconds, conn.interrupt)
         timer.start()
@@ -128,7 +138,7 @@ def cancel_query(qid: str) -> bool:
 
 
 def schema_of(ds: Dataset) -> list[dict]:
-    conn = _new_connection(ds)
+    conn = _new_connection([(ds, "data")])
     try:
         rel = conn.execute("DESCRIBE SELECT * FROM data")
         cols = [d[0] for d in rel.description]

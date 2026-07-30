@@ -27,6 +27,7 @@ REMOTE = os.getenv("QUERYSKIFF_CONTRACT_URL", "").rstrip("/")
 
 FIXTURE_BUCKET = "contractbkt"
 FIXTURE_KEY = "fixture/rows.parquet"
+FIXTURE_KEY2 = "fixture/prices.parquet"   # HEL-112: join partner (shares `symbol`)
 FIXTURE_ROWS = 200          # > DEFAULT_LIMIT and > MAX_RESULT_ROWS below
 DEFAULT_LIMIT = 50
 MAX_RESULT_ROWS = 100
@@ -113,6 +114,11 @@ def client(tmp_path_factory) -> Client:
     duckdb.connect().execute(
         f"COPY (SELECT i AS id, 'sym' || (i % 7) AS symbol, i * 0.5 AS score "
         f"FROM range({FIXTURE_ROWS}) t(i)) TO '{fx}' (FORMAT parquet)")
+    # HEL-112 join partner: one price row per symbol (7 rows), joinable on `symbol`
+    fx2 = fx_dir / "prices.parquet"
+    duckdb.connect().execute(
+        f"COPY (SELECT 'sym' || i AS symbol, 100.0 + i AS price "
+        f"FROM range(7) t(i)) TO '{fx2}' (FORMAT parquet)")
 
     from queryskiff import datasets, engine  # imports AFTER env pinning
     from queryskiff.datasets import Dataset, encode_id
@@ -134,9 +140,13 @@ def client(tmp_path_factory) -> Client:
     }
     real_new_connection = engine._new_connection
 
-    def _local_connection(ds: Dataset):
+    _local_files = {FIXTURE_KEY: fx, FIXTURE_KEY2: fx2}
+
+    def _local_connection(entries: list[tuple[Dataset, str]]):
+        # mirrors the real signature (HEL-112): one view per (dataset, alias)
         conn = duckdb.connect(database=":memory:")
-        conn.read_parquet(str(fx)).create_view("data", replace=True)
+        for ds, alias in entries:
+            conn.read_parquet(str(_local_files[ds.key])).create_view(alias, replace=True)
         return conn
 
     engine._new_connection = _local_connection  # noqa: SLF001 — test seam

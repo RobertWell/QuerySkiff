@@ -143,7 +143,9 @@ def test_query_lifecycle_success(client, fixture_dataset_id):
 
 def test_missing_dataset_id_is_400(client):
     code, body = client.post("/api/queries", {"sql": "SELECT 1"})
-    assert code == 400 and body["detail"] == "dataset_id required"
+    # MIGRATION NOTE (HEL-112): message evolved from "dataset_id required" when
+    # the workspace payload (`datasets: [{dataset_id, alias}]`) was added.
+    assert code == 400 and body["detail"] == "dataset_id or datasets required"
 
 
 def test_query_on_unknown_dataset_is_404(client):

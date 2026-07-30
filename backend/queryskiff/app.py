@@ -15,9 +15,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import datasets, engine
+from . import datasets, engine, workspace
 from .config import config
 from .sqlsafety import UnsafeSQL
+from .workspace import WorkspaceError
 
 BASE = config.base_path.rstrip("/")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -58,19 +59,56 @@ def dataset_metadata(dataset_id: str):
                             detail=f"could not read metadata: {datasets.redact(str(exc))}") from exc
 
 
+def _entries_from_body(body: dict) -> list[tuple[datasets.Dataset, str]]:
+    """HEL-112: `datasets: [{dataset_id, alias}]` workspace payload, or the
+    legacy `dataset_id` (implicit alias `data`). Both validated server-side."""
+    ws = body.get("datasets")
+    if ws is not None:
+        entries = workspace.resolve_entries(ws)
+        return [(e.dataset, e.alias) for e in entries]
+    dataset_id = body.get("dataset_id")
+    if not dataset_id:
+        raise HTTPException(status_code=400, detail="dataset_id or datasets required")
+    return [(_resolve(dataset_id), "data")]
+
+
 @api.post("/queries")
 async def submit_query(request: Request):
-    body = await request.json()
-    dataset_id = (body or {}).get("dataset_id")
-    sql = (body or {}).get("sql", "")
-    if not dataset_id:
-        raise HTTPException(status_code=400, detail="dataset_id required")
-    ds = _resolve(dataset_id)
+    body = await request.json() or {}
+    sql = body.get("sql", "")
     try:
-        q = engine.create_query(ds, sql)
+        entries = _entries_from_body(body)
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        q = engine.create_query(entries, sql)
     except UnsafeSQL as exc:
         raise HTTPException(status_code=400, detail=f"unsafe SQL: {exc}") from exc
     return {"query_id": q.id, "status": q.status}
+
+
+@api.post("/workspace/hints")
+async def workspace_hints(request: Request):
+    """Join-column compatibility hints + editable starter JOIN SQL for a
+    workspace. Read-only; schemas resolved server-side per dataset."""
+    body = await request.json() or {}
+    try:
+        entries = workspace.resolve_entries(body.get("datasets") or [])
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    schemas: dict[str, list[dict]] = {}
+    for e in entries:
+        try:
+            schemas[e.alias] = engine.schema_of(e.dataset)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502,
+                detail=f"could not read schema for alias {e.alias!r}: "
+                       f"{datasets.redact(str(exc))}") from exc
+    hints = workspace.join_hints(schemas)
+    return {"hints": hints,
+            "starter_sql": workspace.starter_join_sql(entries, hints),
+            "schemas": schemas}
 
 
 def _query_or_404(query_id: str) -> engine.Query:
