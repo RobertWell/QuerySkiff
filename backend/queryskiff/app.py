@@ -15,8 +15,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import datasets, engine, workspace
+from . import datasets, workspace
 from .config import config
+
+# HEL-112/113: engine selection. "trino" = shared engine + auto-registration;
+# "duckdb" (default) = the per-query embedded path. Same public surface.
+if config.engine == "trino":
+    from . import engine_trino as engine
+else:
+    from . import engine
 from .sqlsafety import UnsafeSQL
 from .workspace import WorkspaceError
 

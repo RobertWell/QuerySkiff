@@ -44,6 +44,18 @@ class Config:
     allowed_buckets: list[str] = field(
         default_factory=lambda: _csv("QUERYSKIFF_ALLOWED_BUCKETS", "stable-stock,model-results"))
 
+    # HEL-112/113: query engine. "duckdb" (default, per-query embedded) or
+    # "trino" (shared engine + auto-registration). Rollback = flip the flag.
+    engine: str = _env("QUERYSKIFF_ENGINE", "duckdb")
+    trino_host: str = _env("QUERYSKIFF_TRINO_HOST", "trino.trino.svc.cluster.local")
+    trino_port: int = _int("QUERYSKIFF_TRINO_PORT", 8080)
+    trino_catalog: str = _env("QUERYSKIFF_TRINO_CATALOG", "minio")
+    trino_schema: str = _env("QUERYSKIFF_TRINO_SCHEMA", "ds")
+    # managed per-table prefixes for auto-registration (server-side copies of
+    # loose parquet objects live here; bucket must be in allowed_buckets' MinIO)
+    trino_managed_bucket: str = _env("QUERYSKIFF_TRINO_MANAGED_BUCKET", "model-results")
+    trino_managed_prefix: str = _env("QUERYSKIFF_TRINO_MANAGED_PREFIX", "queryskiff-tables/")
+
     default_limit: int = _int("QUERYSKIFF_DEFAULT_LIMIT", 500)
     max_result_rows: int = _int("QUERYSKIFF_MAX_RESULT_ROWS", 10_000)
     max_running_queries: int = _int("QUERYSKIFF_MAX_RUNNING_QUERIES", 4)

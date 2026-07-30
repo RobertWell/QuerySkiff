@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29
 duckdb>=0.10
 minio>=7.2
 sqlglot>=23
+trino>=0.330
