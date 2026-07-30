@@ -1,0 +1,20 @@
+{
+  "scan_agg": {
+    "solo_median_s": 0.199,
+    "c10_median_s": 0.745,
+    "c10_p95_s": 0.893,
+    "c10_wall_s": 0.899
+  },
+  "filter": {
+    "solo_median_s": 0.108,
+    "c10_median_s": 1.493,
+    "c10_p95_s": 1.573,
+    "c10_wall_s": 1.597
+  },
+  "join_mm": {
+    "solo_median_s": 0.063,
+    "c10_median_s": 0.454,
+    "c10_p95_s": 0.602,
+    "c10_wall_s": 0.608
+  }
+}

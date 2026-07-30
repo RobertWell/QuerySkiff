@@ -1,0 +1,38 @@
+{
+  "scan_agg": {
+    "solo_median_s": 0.153,
+    "c10_median_s": 0.534,
+    "c10_p95_s": 0.672,
+    "c10_wall_s": 0.683
+  },
+  "filter": {
+    "solo_median_s": 0.205,
+    "c10_median_s": 111.323,
+    "c10_p95_s": 113.45,
+    "c10_wall_s": 113.681
+  },
+  "join_mm": {
+    "solo_median_s": 0.202,
+    "c10_median_s": 0.964,
+    "c10_p95_s": 0.985,
+    "c10_wall_s": 0.996
+  },
+  "join_xsrc": {
+    "solo_median_s": 0.375,
+    "c10_median_s": 1.179,
+    "c10_p95_s": 1.327,
+    "c10_wall_s": 1.369
+  },
+  "pg_pushdown": {
+    "aggregation_pushed": true,
+    "table_scan_line": "\u2514\u2500 TableScan[table = pg:Query[SELECT count(*) AS \"_pfgnrtd_0\" FROM \"stocktrader\".\"trdmgmr\".\"stock_trend_signals\" WHERE \"horizon\" = ?] columns=[_pfgnrtd_0:bigint"
+  },
+  "timeout_test": {
+    "enforced": true,
+    "after_s": 2.2,
+    "error": "TrinoQueryError(type=INSUFFICIENT_RESOURCES, name=EXCEEDED_TIME_LIMIT, message=\"Query exceeded maximum time limit of 2.0"
+  },
+  "cancel_test": {
+    "cancelled_after_s": 1198.13
+  }
+}
