@@ -60,6 +60,34 @@ export const submitQuery = (dataset_id: string, sql: string) =>
     body: JSON.stringify({ dataset_id, sql }),
   }).then((r) => j<{ query_id: string; status: string }>(r));
 
+// HEL-112: workspace of {dataset_id, alias} entries joined with ordinary SQL.
+export interface WorkspaceEntry {
+  dataset_id: string;
+  alias: string;
+}
+
+export interface JoinHint {
+  column: string;
+  aliases: { alias: string; type: string }[];
+  compatible: boolean;
+  note: string | null;
+}
+
+export const submitWorkspaceQuery = (datasets: WorkspaceEntry[], sql: string) =>
+  fetch(`${API}/queries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ datasets, sql }),
+  }).then((r) => j<{ query_id: string; status: string }>(r));
+
+export const workspaceHints = (datasets: WorkspaceEntry[]) =>
+  fetch(`${API}/workspace/hints`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ datasets }),
+  }).then((r) => j<{ hints: JoinHint[]; starter_sql: string;
+                     schemas: Record<string, SchemaCol[]> }>(r));
+
 export const queryStatus = (id: string) =>
   fetch(`${API}/queries/${id}`).then((r) => j<QueryStatus>(r));
 
