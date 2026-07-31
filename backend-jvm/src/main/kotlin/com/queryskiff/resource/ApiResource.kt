@@ -4,8 +4,12 @@ import com.queryskiff.config.QsConfig
 import com.queryskiff.datasets.Datasets
 import com.queryskiff.datasets.MinioListing
 import com.queryskiff.engine.DuckDbEngine
+import com.queryskiff.engine.QueryEngine
+import com.queryskiff.engine.TrinoEngine
+import com.queryskiff.registrar.Registrar
 import com.queryskiff.sql.UnsafeSql
 import com.queryskiff.workspace.Workspace
+import io.minio.MinioClient
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.ws.rs.DELETE
 import jakarta.ws.rs.GET
@@ -29,7 +33,9 @@ import jakarta.ws.rs.core.Response
 @Produces(MediaType.APPLICATION_JSON)
 class ApiResource(private val config: QsConfig) {
 
-    private val engine: DuckDbEngine by lazy {
+    // The DuckDB engine always exists: it is the default query path AND the
+    // registrar's footer sniffer under Trino (schema without a data scan).
+    private val duckEngine: DuckDbEngine by lazy {
         DuckDbEngine(DuckDbEngine.EngineConfig(
             minioEndpoint = config.minioEndpoint,
             minioAccessKey = config.minioAccessKey,
@@ -43,6 +49,34 @@ class ApiResource(private val config: QsConfig) {
             tempDir = config.tempDir,
             allowedBuckets = config.allowedBuckets,
         ))
+    }
+
+    // HEL-112/113 engine dispatch, mirroring `app.py`: QUERYSKIFF_ENGINE=trino
+    // selects the shared engine + auto-registration; anything else = DuckDB.
+    private val engine: QueryEngine by lazy {
+        if (config.engine == "trino") {
+            val trinoConfig = TrinoEngine.Config(
+                host = config.trinoHost, port = config.trinoPort,
+                catalog = config.trinoCatalog, schema = config.trinoSchema,
+                defaultLimit = config.defaultLimit, maxResultRows = config.maxResultRows,
+                maxRunningQueries = config.maxRunningQueries,
+                timeoutSeconds = config.timeoutSeconds,
+                allowedBuckets = config.allowedBuckets,
+            )
+            val registrar = Registrar(
+                Registrar.Config(config.trinoCatalog, config.trinoSchema,
+                                 config.trinoManagedBucket, config.trinoManagedPrefix),
+                sniffer = { ds -> duckEngine.schemaOf(ds) },
+                connFactory = { TrinoEngine.openConnection(trinoConfig) },
+                minioFactory = {
+                    MinioClient.builder()
+                        .endpoint("http${if (config.minioSecure) "s" else ""}://${config.minioEndpoint}")
+                        .credentials(config.minioAccessKey, config.minioSecretKey)
+                        .build()
+                },
+            )
+            TrinoEngine(trinoConfig, registrar)
+        } else duckEngine
     }
 
     private val listing: MinioListing by lazy {

@@ -54,8 +54,17 @@ class ApiSmokeTest {
     }
 
     @Test
-    fun `spa fallback without built frontend is honest 404 json`() {
-        given().get("/queryskiff/some/client/route").then().statusCode(404)
-            .body("error", equalTo("frontend not built"))
+    fun `spa fallback serves index when bundled else honest 404 json`() {
+        // the frontend bundle is staged (not committed) into META-INF/resources
+        // for remote contract runs — assert whichever state this build is in.
+        val bundled = javaClass
+            .getResource("/META-INF/resources/queryskiff/index.html") != null
+        if (bundled) {
+            given().get("/queryskiff/some/client/route").then().statusCode(200)
+                .contentType("text/html")
+        } else {
+            given().get("/queryskiff/some/client/route").then().statusCode(404)
+                .body("error", equalTo("frontend not built"))
+        }
     }
 }

@@ -64,6 +64,13 @@
       <artifactId>minio</artifactId>
       <version>8.5.12</version>
     </dependency>
+    <!-- HEL-113 Trino engine path (QUERYSKIFF_ENGINE=trino); client tracks the
+         deployed server (trinodb/trino:476) -->
+    <dependency>
+      <groupId>io.trino</groupId>
+      <artifactId>trino-jdbc</artifactId>
+      <version>476</version>
+    </dependency>
     <!-- minio-java requires okhttp >= 4.11 (and its okio 3.x); the Quarkus
          BOM pins older versions of both -->
     <dependency>

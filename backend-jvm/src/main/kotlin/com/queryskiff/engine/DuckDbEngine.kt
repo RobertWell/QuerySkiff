@@ -4,13 +4,11 @@ import com.queryskiff.datasets.Datasets
 import com.queryskiff.sql.SqlPolicy
 import java.sql.Connection
 import java.sql.DriverManager
-import java.sql.Statement
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * HEL-95 phase 4: JVM port of `queryskiff.engine` — the bounded per-query
@@ -30,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * quote-escaped as belt-and-braces. Aliases are pre-validated identifiers
  * (Workspace) quoted defensively.
  */
-class DuckDbEngine(private val config: EngineConfig) {
+class DuckDbEngine(private val config: EngineConfig) : QueryEngine {
 
     data class EngineConfig(
         val minioEndpoint: String,
@@ -47,18 +45,6 @@ class DuckDbEngine(private val config: EngineConfig) {
         /** test seam: rewrite an s3 URI to a local fixture path (contract harness). */
         val uriRewriter: (String) -> String = { it },
     )
-
-    class Query internal constructor(val id: String, val sql: String,
-                                     val datasetIds: List<String>, val aliases: List<String>) {
-        @Volatile var status: String = "pending"   // pending|running|done|error|cancelled
-        @Volatile var error: String? = null
-        @Volatile var columns: List<String> = emptyList()
-        @Volatile var rows: List<List<Any?>> = emptyList()
-        @Volatile var rowCount: Int = 0
-        @Volatile var truncated: Boolean = false
-        internal val cancelFlag = AtomicBoolean(false)
-        @Volatile internal var activeStatement: Statement? = null
-    }
 
     private val semaphore = Semaphore(config.maxRunningQueries)
     private val queries = ConcurrentHashMap<String, Query>()
@@ -100,7 +86,7 @@ class DuckDbEngine(private val config: EngineConfig) {
         return uri.replace("'", "''")
     }
 
-    fun createQuery(entries: List<Pair<Datasets.Dataset, String>>, sql: String): Query {
+    override fun createQuery(entries: List<Pair<Datasets.Dataset, String>>, sql: String): Query {
         val aliases = entries.map { it.second }.toSet()
         var safe = SqlPolicy.validate(sql, allowedTables = aliases)
         if (!SqlPolicy.hasLimit(safe)) {
@@ -115,7 +101,7 @@ class DuckDbEngine(private val config: EngineConfig) {
 
     private fun run(q: Query, entries: List<Pair<Datasets.Dataset, String>>) {
         if (!semaphore.tryAcquire(config.timeoutSeconds.toLong(), TimeUnit.SECONDS)) {
-            q.status = "error"; q.error = "server busy (max concurrent queries)"
+            q.error = "server busy (max concurrent queries)"; q.status = "error"
             return
         }
         try {
@@ -162,9 +148,9 @@ class DuckDbEngine(private val config: EngineConfig) {
         }
     }
 
-    fun getQuery(id: String): Query? = queries[id]
+    override fun getQuery(id: String): Query? = queries[id]
 
-    fun cancelQuery(id: String): Boolean {
+    override fun cancelQuery(id: String): Boolean {
         val q = queries[id] ?: return false
         if (q.status in setOf("done", "error", "cancelled")) return false
         q.cancelFlag.set(true)
@@ -172,7 +158,7 @@ class DuckDbEngine(private val config: EngineConfig) {
         return true
     }
 
-    fun schemaOf(ds: Datasets.Dataset): List<Map<String, Any?>> =
+    override fun schemaOf(ds: Datasets.Dataset): List<Map<String, Any?>> =
         newConnection(listOf(ds to "data")).use { conn ->
             conn.createStatement().use { st ->
                 val rs = st.executeQuery("DESCRIBE SELECT * FROM data")

@@ -30,10 +30,25 @@ class QsConfig {
         get() = env("QUERYSKIFF_ALLOWED_BUCKETS", "stable-stock,model-results")
             .split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
+    // HEL-112/113: query engine. "duckdb" (default, per-query embedded) or
+    // "trino" (shared engine + auto-registration). Rollback = flip the flag.
+    val engine: String get() = env("QUERYSKIFF_ENGINE", "duckdb")
+    val trinoHost: String get() = env("QUERYSKIFF_TRINO_HOST", "trino.trino.svc.cluster.local")
+    val trinoPort: Int get() = envInt("QUERYSKIFF_TRINO_PORT", 8080)
+    val trinoCatalog: String get() = env("QUERYSKIFF_TRINO_CATALOG", "minio")
+    val trinoSchema: String get() = env("QUERYSKIFF_TRINO_SCHEMA", "ds")
+    // managed per-table prefixes for auto-registration (server-side copies of
+    // loose parquet objects live here; bucket must be in allowed_buckets' MinIO)
+    val trinoManagedBucket: String get() = env("QUERYSKIFF_TRINO_MANAGED_BUCKET", "model-results")
+    val trinoManagedPrefix: String get() = env("QUERYSKIFF_TRINO_MANAGED_PREFIX", "queryskiff-tables/")
+
     val defaultLimit: Int get() = envInt("QUERYSKIFF_DEFAULT_LIMIT", 500)
     val maxResultRows: Int get() = envInt("QUERYSKIFF_MAX_RESULT_ROWS", 10_000)
+    // HEL-112 multi-user: DuckDB's low cap protects per-process memory; under
+    // Trino the engine governs memory/queueing globally, so this pod can admit
+    // far more in-flight requests (override explicitly to tune either way).
     val maxRunningQueries: Int
-        get() = envInt("QUERYSKIFF_MAX_RUNNING_QUERIES", 4)
+        get() = envInt("QUERYSKIFF_MAX_RUNNING_QUERIES", if (engine == "trino") 16 else 4)
     val timeoutSeconds: Int get() = envInt("QUERYSKIFF_TIMEOUT_SECONDS", 60)
     val memoryLimit: String get() = env("QUERYSKIFF_MEMORY_LIMIT", "4GB")
     val tempDir: String get() = env("QUERYSKIFF_TEMP_DIR", "/tmp/queryskiff-duckdb")

@@ -65,7 +65,8 @@ def create_query(entries: list[tuple[Dataset, str]], sql: str) -> Query:
 def _run(q: Query, entries: list[tuple[Dataset, str]]) -> None:
     acquired = _semaphore.acquire(timeout=config.timeout_seconds)
     if not acquired:
-        q.status, q.error = "error", "server busy (max concurrent queries)"
+        # error BEFORE status: status is the publication signal pollers key on
+        q.error, q.status = "server busy (max concurrent queries)", "error"
         return
     cur = None
     try:
@@ -93,7 +94,7 @@ def _run(q: Query, entries: list[tuple[Dataset, str]]) -> None:
         if q._cancel.is_set():
             q.status = "cancelled"
         else:
-            q.status, q.error = "error", redact(str(exc).splitlines()[0])[:500]
+            q.error, q.status = redact(str(exc).splitlines()[0])[:500], "error"
     finally:
         _semaphore.release()
 

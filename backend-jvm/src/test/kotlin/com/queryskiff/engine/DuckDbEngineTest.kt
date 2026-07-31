@@ -58,7 +58,7 @@ class DuckDbEngineTest {
                 }
             }))
 
-    private fun await(e: DuckDbEngine, q: DuckDbEngine.Query): DuckDbEngine.Query {
+    private fun await(e: DuckDbEngine, q: Query): Query {
         val deadline = System.currentTimeMillis() + 30_000
         while (q.status in setOf("pending", "running")) {
             check(System.currentTimeMillis() < deadline) { "query did not settle" }
