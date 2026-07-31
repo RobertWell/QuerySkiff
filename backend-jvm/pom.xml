@@ -64,6 +64,18 @@
       <artifactId>minio</artifactId>
       <version>8.5.12</version>
     </dependency>
+    <!-- minio-java requires okhttp >= 4.11 (and its okio 3.x); the Quarkus
+         BOM pins older versions of both -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>okhttp</artifactId>
+      <version>4.12.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.squareup.okio</groupId>
+      <artifactId>okio</artifactId>
+      <version>3.6.0</version>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-junit5</artifactId>
