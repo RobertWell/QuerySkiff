@@ -44,7 +44,12 @@ object SqlPolicy {
         "read_text", "read_blob", "parquet_scan", "glob(",
     )
 
-    fun validate(sql: String): String {
+    /**
+     * HEL-112 parity: `allowedTables` mirrors Python `validate(allowed_tables=)`
+     * — the workspace's registered aliases (default = the legacy single dataset
+     * `data`). Query-local CTE names are always additionally allowed.
+     */
+    fun validate(sql: String, allowedTables: Set<String> = setOf(ALLOWED_TABLE)): String {
         if (sql.isBlank()) throw UnsafeSql("empty query")
         val inner = stripExplain(sql)
         val lowered = inner.lowercase()
@@ -59,10 +64,11 @@ object SqlPolicy {
         }
         if (statements.size != 1) throw UnsafeSql("exactly one statement is allowed")
 
+        val allowed = allowedTables.map { it.lowercase() }.toSet()
         when (val st = statements.first()) {
             is DescribeStatement -> return sql.trim().trimEnd(';')
-            is Select -> checkTables(st)
-            is ExplainStatement -> (st.statement as? Select)?.let { checkTables(it) }
+            is Select -> checkTables(st, allowed)
+            is ExplainStatement -> (st.statement as? Select)?.let { checkTables(it, allowed) }
                 ?: throw UnsafeSql("EXPLAIN only over a SELECT is allowed")
             else -> throw UnsafeSql(
                 "only SELECT/WITH queries are allowed (got ${st.javaClass.simpleName})")
@@ -75,7 +81,7 @@ object SqlPolicy {
         return if (s.lowercase().startsWith("explain")) s.substring("explain".length).trim() else s
     }
 
-    private fun checkTables(select: Select) {
+    private fun checkTables(select: Select, allowed: Set<String>) {
         val cteNames = buildSet {
             select.withItemsList?.forEach { it.alias?.name?.lowercase()?.let(::add) }
         }
@@ -86,8 +92,9 @@ object SqlPolicy {
         }
         for (t in tables) {
             val bare = t.substringAfterLast('.').trim('"').lowercase()
-            if (bare != ALLOWED_TABLE && bare !in cteNames) {
-                throw UnsafeSql("only the table `data` may be queried (found '$t')")
+            if (bare !in allowed && bare !in cteNames) {
+                val names = allowed.sorted().joinToString(", ")
+                throw UnsafeSql("only these tables may be queried: $names (found '$t')")
             }
         }
     }
