@@ -21,7 +21,11 @@ spec:
     spec:
       containers:
         - name: queryskiff
-          image: docker.io/roguerzzz123/queryskiff:latest
+          # HEL-95 cutover 2026-07-31: Kotlin/Quarkus backend (was the Python
+          # image roguerzzz123/queryskiff:latest — still published; rollback =
+          # revert this line). Same env/port/probe contract; contract suite
+          # 35/0 against this exact image, canary-proven in-cluster pre-flip.
+          image: docker.io/roguerzzz123/queryskiff-jvm:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5400
