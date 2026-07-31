@@ -68,10 +68,17 @@ class DuckDbEngine(private val config: EngineConfig) : QueryEngine {
             st.execute("SET s3_access_key_id='${config.minioAccessKey}'")
             st.execute("SET s3_secret_access_key='${config.minioSecretKey}'")
         }
-        for ((ds, alias) in entries) {
-            val uri = safeUri(config.uriRewriter(Datasets.s3Uri(ds)))
+        // HEL-121: entries sharing one alias form a SINGLE multi-file view —
+        // a saved virtual selection queried as one logical source. Schema
+        // combination is explicit: strict by default; union_by_name when the
+        // selection's policy says so. Incompatible files fail with DuckDB's
+        // schema diagnostic (never silently coerced).
+        for ((alias, group) in entries.groupBy({ it.second }, { it.first })) {
+            val uris = group.map { safeUri(config.uriRewriter(Datasets.s3Uri(it))) }
+            val list = uris.joinToString(", ") { "'" + it + "'" }
+            val union = if (group.any { it.unionByName }) ", union_by_name=true" else ""
             conn.createStatement().use { st ->
-                st.execute("CREATE OR REPLACE VIEW \"$alias\" AS SELECT * FROM read_parquet('$uri')")
+                st.execute("CREATE OR REPLACE VIEW \"$alias\" AS SELECT * FROM read_parquet([$list]$union)")
             }
         }
         return conn

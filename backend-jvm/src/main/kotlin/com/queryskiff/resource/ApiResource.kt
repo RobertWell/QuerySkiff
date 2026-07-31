@@ -3,6 +3,8 @@ package com.queryskiff.resource
 import com.queryskiff.config.QsConfig
 import com.queryskiff.datasets.Datasets
 import com.queryskiff.datasets.MinioListing
+import com.queryskiff.datasets.MinioRegistryStorage
+import com.queryskiff.datasets.VirtualDatasets
 import com.queryskiff.engine.DuckDbEngine
 import com.queryskiff.engine.QueryEngine
 import com.queryskiff.engine.TrinoEngine
@@ -79,6 +81,20 @@ class ApiResource(private val config: QsConfig) {
         } else duckEngine
     }
 
+    // HEL-121: the virtual-dataset registry (records in MinIO; opaque v_ ids)
+    private val virtual: VirtualDatasets by lazy {
+        VirtualDatasets(
+            MinioRegistryStorage({
+                MinioClient.builder()
+                    .endpoint("http${if (config.minioSecure) "s" else ""}://${config.minioEndpoint}")
+                    .credentials(config.minioAccessKey, config.minioSecretKey)
+                    .build()
+            }, config.registryBucket, config.registryPrefix),
+            config.allowedBuckets,
+            warnFileCount = config.virtualWarnFiles,
+            maxFileCount = config.virtualMaxFiles)
+    }
+
     private val listing: MinioListing by lazy {
         MinioListing(config.minioEndpoint, config.minioAccessKey,
                      config.minioSecretKey, config.minioSecure, config.allowedBuckets)
@@ -125,13 +141,89 @@ class ApiResource(private val config: QsConfig) {
     private fun entriesFromBody(body: Map<String, Any?>): List<Pair<Datasets.Dataset, String>> {
         val ws = body["datasets"] as? List<Map<String, Any?>>
         if (ws != null) {
-            return Workspace.resolveEntries(ws, config.allowedBuckets)
-                .map { it.dataset to it.alias }
+            // HEL-121: an entry may reference a SAVED virtual dataset instead
+            // of a single object id — it expands to all (re-validated) members
+            // under ONE alias, forming a single multi-file logical source.
+            val plain = mutableListOf<Map<String, Any?>>()
+            val expanded = mutableListOf<Pair<Datasets.Dataset, String>>()
+            for (e in ws) {
+                val vid = e["virtual_id"]?.toString()
+                if (vid == null) { plain += e; continue }
+                val alias = e["alias"]?.toString()
+                    ?: throw Workspace.WorkspaceError("virtual dataset entries need an alias")
+                val (rec, members, _) = try { virtual.open(vid) }
+                    catch (ex: VirtualDatasets.VirtualDatasetError) {
+                        throw Workspace.WorkspaceError(ex.message ?: "bad virtual dataset")
+                    }
+                val union = rec.schemaPolicy == VirtualDatasets.SchemaPolicy.UNION_BY_NAME
+                expanded += members.map { it.copy(unionByName = union) to alias }
+            }
+            val resolved = if (plain.isNotEmpty())
+                Workspace.resolveEntries(plain, config.allowedBuckets).map { it.dataset to it.alias }
+            else emptyList()
+            val all = resolved + expanded
+            if (all.isEmpty()) throw Workspace.WorkspaceError("datasets must not be empty")
+            // alias uniqueness ACROSS entries (HEL-112 rule): virtual members
+            // deliberately share their own alias, but no two ENTRIES may claim
+            // the same one.
+            val entryAliases = resolved.map { it.second } + expanded.map { it.second }.distinct()
+            val clash = entryAliases.groupBy { it }.filterValues { g -> g.size > 1 }.keys
+            if (clash.isNotEmpty())
+                throw Workspace.WorkspaceError("duplicate alias: ${clash.first()}")
+            return all
         }
         val id = body["dataset_id"]?.toString()
             ?: throw Workspace.WorkspaceError("dataset_id or datasets required")
         return listOf(resolveOr404(id) to "data")
     }
+
+    // ── HEL-121 virtual-dataset registry endpoints ─────────────────────────
+
+    @GET
+    @Path("/virtual-datasets")
+    fun listVirtual(): Any = try {
+        mapOf("virtual_datasets" to virtual.list().map { virtual.toApi(it) })
+    } catch (e: Exception) {
+        err(502, "could not list virtual datasets: ${Datasets.redact(e.message, config.allowedBuckets)}")
+    }
+
+    @POST
+    @Path("/virtual-datasets")
+    fun saveVirtual(body: Map<String, Any?>?): Any {
+        val b = body ?: emptyMap()
+        val name = b["display_name"]?.toString() ?: return err(400, "display_name required")
+        @Suppress("UNCHECKED_CAST")
+        val ids = (b["dataset_ids"] as? List<*>)?.map { it.toString() }
+            ?: return err(400, "dataset_ids required")
+        val policy = when (b["schema_policy"]?.toString()?.uppercase()) {
+            null, "STRICT" -> VirtualDatasets.SchemaPolicy.STRICT
+            "UNION_BY_NAME" -> VirtualDatasets.SchemaPolicy.UNION_BY_NAME
+            else -> return err(400, "schema_policy must be STRICT or UNION_BY_NAME")
+        }
+        return try {
+            val (rec, warnings) = virtual.save(name, ids, policy,
+                owner = b["owner"]?.toString(), expiresAt = b["expires_at"]?.toString())
+            virtual.toApi(rec, warnings)
+        } catch (e: VirtualDatasets.VirtualDatasetError) {
+            err(400, e.message ?: "bad virtual dataset")
+        } catch (e: Datasets.DatasetError) {
+            err(400, e.message ?: "bad member dataset")
+        }
+    }
+
+    @GET
+    @Path("/virtual-datasets/{id}")
+    fun getVirtual(@PathParam("id") id: String): Any = try {
+        val (rec, _, warnings) = virtual.open(id)
+        virtual.toApi(rec, warnings)
+    } catch (e: VirtualDatasets.VirtualDatasetError) {
+        err(404, e.message ?: "unknown virtual dataset")
+    }
+
+    @DELETE
+    @Path("/virtual-datasets/{id}")
+    fun deleteVirtual(@PathParam("id") id: String): Any =
+        mapOf("deleted" to virtual.delete(id))
 
     @POST
     @Path("/queries")

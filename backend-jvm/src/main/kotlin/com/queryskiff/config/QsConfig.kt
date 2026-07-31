@@ -42,6 +42,12 @@ class QsConfig {
     val trinoManagedBucket: String get() = env("QUERYSKIFF_TRINO_MANAGED_BUCKET", "model-results")
     val trinoManagedPrefix: String get() = env("QUERYSKIFF_TRINO_MANAGED_PREFIX", "queryskiff-tables/")
 
+    // HEL-121 virtual-dataset registry (records live in MinIO, keyed by id)
+    val registryBucket: String get() = env("QUERYSKIFF_REGISTRY_BUCKET", "model-results")
+    val registryPrefix: String get() = env("QUERYSKIFF_REGISTRY_PREFIX", "queryskiff-virtual/")
+    val virtualWarnFiles: Int get() = envInt("QUERYSKIFF_VIRTUAL_WARN_FILES", 64)
+    val virtualMaxFiles: Int get() = envInt("QUERYSKIFF_VIRTUAL_MAX_FILES", 512)
+
     val defaultLimit: Int get() = envInt("QUERYSKIFF_DEFAULT_LIMIT", 500)
     val maxResultRows: Int get() = envInt("QUERYSKIFF_MAX_RESULT_ROWS", 10_000)
     // HEL-112 multi-user: DuckDB's low cap protects per-process memory; under
