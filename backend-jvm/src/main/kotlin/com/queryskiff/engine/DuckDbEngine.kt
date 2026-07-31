@@ -151,9 +151,11 @@ class DuckDbEngine(private val config: EngineConfig) {
             if (q.cancelFlag.get()) {
                 q.status = "cancelled"
             } else {
-                q.status = "error"
+                // write error BEFORE status: status is the publication signal
+                // pollers key on, so it must be the last field to change.
                 val first = (e.message ?: "query failed").lineSequence().first()
                 q.error = Datasets.redact(first, config.allowedBuckets).take(500)
+                q.status = "error"
             }
         } finally {
             semaphore.release()
