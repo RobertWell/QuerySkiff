@@ -88,3 +88,21 @@ class VirtualDatasetsTest {
         }
     }
 }
+
+/** Regression (security review 2026-08-01): virtual-entry aliases must pass
+ *  the SAME gate as plain workspace aliases — a quote-bearing alias would
+ *  otherwise reach view DDL. */
+class VirtualAliasGateTest {
+    @org.junit.jupiter.api.Test
+    fun `evil aliases are rejected by the shared gate`() {
+        for (evil in listOf("x\" AS SELECT 1 --", "A", "1bad", "with space",
+                            "x".repeat(31), "x\\\"y")) {
+            org.junit.jupiter.api.Assertions.assertThrows(
+                com.queryskiff.workspace.Workspace.WorkspaceError::class.java) {
+                com.queryskiff.workspace.Workspace.validateAlias(evil)
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+            "ok_alias", com.queryskiff.workspace.Workspace.validateAlias("ok_alias"))
+    }
+}

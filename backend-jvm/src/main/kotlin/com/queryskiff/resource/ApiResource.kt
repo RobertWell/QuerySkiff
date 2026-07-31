@@ -149,8 +149,8 @@ class ApiResource(private val config: QsConfig) {
             for (e in ws) {
                 val vid = e["virtual_id"]?.toString()
                 if (vid == null) { plain += e; continue }
-                val alias = e["alias"]?.toString()
-                    ?: throw Workspace.WorkspaceError("virtual dataset entries need an alias")
+                val alias = Workspace.validateAlias(e["alias"]?.toString()
+                    ?: throw Workspace.WorkspaceError("virtual dataset entries need an alias"))
                 val (rec, members, _) = try { virtual.open(vid) }
                     catch (ex: VirtualDatasets.VirtualDatasetError) {
                         throw Workspace.WorkspaceError(ex.message ?: "bad virtual dataset")

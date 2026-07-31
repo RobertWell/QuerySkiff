@@ -74,6 +74,9 @@ class DuckDbEngine(private val config: EngineConfig) : QueryEngine {
         // selection's policy says so. Incompatible files fail with DuckDB's
         // schema diagnostic (never silently coerced).
         for ((alias, group) in entries.groupBy({ it.second }, { it.first })) {
+            // belt-and-braces (aliases are Workspace-validated upstream): an
+            // identifier that could escape its quotes must never reach DDL.
+            require(!alias.contains('"') && !alias.contains('\\')) { "invalid alias" }
             val uris = group.map { safeUri(config.uriRewriter(Datasets.s3Uri(it))) }
             val list = uris.joinToString(", ") { "'" + it + "'" }
             val union = if (group.any { it.unionByName }) ", union_by_name=true" else ""

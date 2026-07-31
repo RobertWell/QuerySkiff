@@ -12,6 +12,16 @@ import com.queryskiff.datasets.Datasets
  */
 object Workspace {
     private val ALIAS_RE = Regex("^[a-z][a-z0-9_]{0,29}$")
+
+    /** The ONE alias gate (HEL-112): every alias that can reach SQL text —
+     *  plain workspace entries AND virtual-dataset entries — must pass here. */
+    fun validateAlias(alias: String): String {
+        if (!ALIAS_RE.matches(alias))
+            throw WorkspaceError(
+                "invalid alias '$alias' (lowercase letters/digits/underscore, " +
+                "start with a letter, max 30)")
+        return alias
+    }
     private val RESERVED = setOf(
         "select", "from", "where", "join", "on", "with", "as", "group", "order",
         "by", "limit", "union", "all", "distinct", "having", "case", "when",
