@@ -8,9 +8,11 @@ import com.queryskiff.datasets.VirtualDatasets
 import com.queryskiff.engine.DuckDbEngine
 import com.queryskiff.engine.QueryEngine
 import com.queryskiff.engine.TrinoEngine
+import com.queryskiff.metrics.MicrometerVirtualMetrics
 import com.queryskiff.registrar.Registrar
 import com.queryskiff.sql.UnsafeSql
 import com.queryskiff.workspace.Workspace
+import io.micrometer.core.instrument.MeterRegistry
 import io.minio.MinioClient
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.ws.rs.DELETE
@@ -33,7 +35,7 @@ import jakarta.ws.rs.core.Response
 @ApplicationScoped
 @Path("/queryskiff/api")
 @Produces(MediaType.APPLICATION_JSON)
-class ApiResource(private val config: QsConfig) {
+class ApiResource(private val config: QsConfig, private val meterRegistry: MeterRegistry) {
 
     // The DuckDB engine always exists: it is the default query path AND the
     // registrar's footer sniffer under Trino (schema without a data scan).
@@ -92,7 +94,11 @@ class ApiResource(private val config: QsConfig) {
             }, config.registryBucket, config.registryPrefix),
             config.allowedBuckets,
             warnFileCount = config.virtualWarnFiles,
-            maxFileCount = config.virtualMaxFiles)
+            maxFileCount = config.virtualMaxFiles,
+            warnBytes = config.virtualWarnBytes,
+            maxBytes = config.virtualMaxBytes,
+            sizeOf = { ds -> listing.totalBytes(ds) },
+            metrics = MicrometerVirtualMetrics(meterRegistry))
     }
 
     private val listing: MinioListing by lazy {

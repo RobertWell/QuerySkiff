@@ -66,6 +66,68 @@ class VirtualDatasetsTest {
     }
 
     @Test
+    fun `byte budget warns over soft cap and rejects over hard cap`() {
+        // 10 bytes per member; warn at 25 (>2 members), hard cap at 45 (>4).
+        val v = VirtualDatasets(MemStorage(), allowed,
+            warnBytes = 25, maxBytes = 45, sizeOf = { 10L })
+        // 2 members = 20B: under warn, no warning.
+        assertTrue(v.save("small", (1..2).map { id("f$it.parquet") }).second.isEmpty())
+        // 3 members = 30B: over warn, under hard cap → byte warning naming the total.
+        val warns = v.save("mid", (1..3).map { id("f$it.parquet") }).second
+        assertTrue(warns.any { it.contains("totals 30B") }, warns.toString())
+        // 5 members = 50B: over hard cap → rejected, message names the sizes.
+        val ex = assertThrows(VirtualDatasets.VirtualDatasetError::class.java) {
+            v.save("huge", (1..5).map { id("f$it.parquet") })
+        }
+        assertTrue(ex.message!!.contains("limit"))
+        assertFalse(ex.message!!.contains("model-results"))   // no leakage
+    }
+
+    @Test
+    fun `byte budget is inert when no size provider is wired`() {
+        // no sizeOf → byte caps never fire even with tiny thresholds set.
+        val v = VirtualDatasets(MemStorage(), allowed, warnBytes = 1, maxBytes = 1)
+        assertTrue(v.save("s", (1..3).map { id("f$it.parquet") }).second.isEmpty())
+    }
+
+    @Test
+    fun `metrics record admission, rejection, limit pressure and promotion`() {
+        val store = MemStorage()
+        val m = CapturingMetrics()
+        val v = VirtualDatasets(store, allowed, warnFileCount = 1,
+            warnBytes = 15, maxBytes = 45, sizeOf = { 10L }, metrics = m)
+        // save 2 members = 20B: over file-warn(1) and byte-warn(15) → saved + 2 pressures.
+        val (rec, _) = v.save("p", (1..2).map { id("f$it.parquet") })
+        assertEquals(1, m.saved)
+        assertTrue("files" in m.pressure && "bytes" in m.pressure)
+        // reject over byte cap
+        assertThrows(VirtualDatasets.VirtualDatasetError::class.java) {
+            v.save("big", (1..5).map { id("f$it.parquet") })
+        }
+        assertEquals("bytes", m.saveRejections.last())
+        // open + promotion
+        v.open(rec.id); assertEquals(1, m.opened)
+        v.markManaged(rec.id, "minio", "ds", "t"); assertEquals(1, m.promotions)
+        // revoked open (same record store, narrower allowlist) is recorded fail-closed
+        val revoked = VirtualDatasets(store, listOf("other"), metrics = m)
+        assertThrows(VirtualDatasets.VirtualDatasetError::class.java) { revoked.open(rec.id) }
+        assertEquals("revoked", m.openRejections.last())
+    }
+
+    private class CapturingMetrics : VirtualDatasets.Metrics {
+        var saved = 0; var opened = 0; var promotions = 0
+        val saveRejections = mutableListOf<String>()
+        val openRejections = mutableListOf<String>()
+        val pressure = mutableListOf<String>()
+        override fun saved(memberCount: Int, totalBytes: Long?) { saved++ }
+        override fun saveRejected(reason: String) { saveRejections += reason }
+        override fun opened(memberCount: Int) { opened++ }
+        override fun openRejected(reason: String) { openRejections += reason }
+        override fun limitPressure(kind: String) { pressure += kind }
+        override fun promoted() { promotions++ }
+    }
+
+    @Test
     fun `managed marking records promotion state without doing promotion`() {
         val v = VirtualDatasets(MemStorage(), allowed)
         val (rec, _) = v.save("s", listOf(id("k.parquet")))

@@ -19,6 +19,25 @@ class QsConfig {
     private fun envInt(name: String, default: Int): Int =
         System.getenv(name)?.toIntOrNull() ?: default
 
+    /** Parse a human byte size ("256MB", "2GB", "512K", or a plain byte count).
+     *  Binary units (1KB = 1024). Falls back to the default expression's value
+     *  by throwing on nonsense — callers pass a valid default string. */
+    internal fun parseBytes(raw: String): Long {
+        val s = raw.trim().uppercase()
+        val m = Regex("^(\\d+)\\s*(B|KB|MB|GB|TB|K|M|G|T)?$").matchEntire(s)
+            ?: throw IllegalArgumentException("invalid byte size: $raw")
+        val n = m.groupValues[1].toLong()
+        val mult = when (m.groupValues[2]) {
+            "", "B" -> 1L
+            "K", "KB" -> 1L shl 10
+            "M", "MB" -> 1L shl 20
+            "G", "GB" -> 1L shl 30
+            "T", "TB" -> 1L shl 40
+            else -> 1L
+        }
+        return n * mult
+    }
+
     val basePath: String get() = env("QUERYSKIFF_BASE_PATH", "/queryskiff").trimEnd('/')
 
     val minioEndpoint: String get() = env("MINIO_ENDPOINT", "minio.minio.svc.cluster.local:9000")
@@ -47,6 +66,12 @@ class QsConfig {
     val registryPrefix: String get() = env("QUERYSKIFF_REGISTRY_PREFIX", "queryskiff-virtual/")
     val virtualWarnFiles: Int get() = envInt("QUERYSKIFF_VIRTUAL_WARN_FILES", 64)
     val virtualMaxFiles: Int get() = envInt("QUERYSKIFF_VIRTUAL_MAX_FILES", 512)
+    // HEL-121: input-BYTE budget for a saved virtual selection — distinct from
+    // file count, result-row count, and DuckDB memory. Total on-disk size of the
+    // member objects; crossing warn attaches a compaction/promotion hint, the
+    // hard cap rejects the save. Human sizes ("256MB", "2GB", "512K", bytes).
+    val virtualWarnBytes: Long get() = parseBytes(env("QUERYSKIFF_VIRTUAL_WARN_BYTES", "256MB"))
+    val virtualMaxBytes: Long get() = parseBytes(env("QUERYSKIFF_VIRTUAL_MAX_BYTES", "2GB"))
 
     val defaultLimit: Int get() = envInt("QUERYSKIFF_DEFAULT_LIMIT", 500)
     val maxResultRows: Int get() = envInt("QUERYSKIFF_MAX_RESULT_ROWS", 10_000)

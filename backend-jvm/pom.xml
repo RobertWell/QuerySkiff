@@ -45,6 +45,13 @@
       <groupId>com.fasterxml.jackson.module</groupId>
       <artifactId>jackson-module-kotlin</artifactId>
     </dependency>
+    <!-- HEL-121 observability: Prometheus registry exposes /q/metrics (JVM +
+         per-endpoint HTTP latency/status for free) and backs the virtual-
+         dataset lifecycle counters. Scraped by the prod Alloy stack. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-stdlib</artifactId>

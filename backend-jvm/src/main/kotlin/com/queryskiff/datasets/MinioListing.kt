@@ -66,6 +66,22 @@ class MinioListing(
         return out.sortedBy { it["name"].toString() }
     }
 
+    /** Total on-disk bytes for a dataset: a file's object size, or the sum of
+     *  every parquet part under a folder prefix. Used by the HEL-121 byte
+     *  budget. Object keys never leave this layer. */
+    fun totalBytes(ds: Datasets.Dataset): Long {
+        val c = client()
+        if (!ds.isFolder) {
+            return c.statObject(
+                StatObjectArgs.builder().bucket(ds.bucket).`object`(ds.key).build()).size()
+        }
+        return c.listObjects(ListObjectsArgs.builder()
+            .bucket(ds.bucket).prefix(ds.key).recursive(true).build())
+            .map { it.get() }
+            .filter { it.objectName().lowercase().endsWith(".parquet") }
+            .sumOf { it.size() }
+    }
+
     /** Browser-safe metadata: logical label + size/modified/content-type only. */
     fun objectMetadata(ds: Datasets.Dataset): Map<String, Any?> {
         if (ds.isFolder) return mapOf("kind" to "folder", "name" to ds.label)
