@@ -9,7 +9,7 @@ RUN npm install --no-audit --no-fund
 COPY frontend/ ./
 RUN npx vite build --outDir /fe-dist --emptyOutDir
 
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /w
 COPY backend-jvm/pom.xml ./
 # warm the dependency cache before sources so code edits don't re-download
@@ -20,7 +20,7 @@ COPY backend-jvm/src ./src
 COPY --from=frontend /fe-dist ./src/main/resources/META-INF/resources/queryskiff
 RUN mvn -q -B -DskipTests package
 
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /w/target/quarkus-app/ ./
 # DuckDB's httpfs extension is fetched at first INSTALL; place it in the
