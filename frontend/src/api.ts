@@ -61,10 +61,47 @@ export const submitQuery = (dataset_id: string, sql: string) =>
   }).then((r) => j<{ query_id: string; status: string }>(r));
 
 // HEL-112: workspace of {dataset_id, alias} entries joined with ordinary SQL.
+// HEL-121: an entry may reference a saved virtual dataset via `virtual_id`
+// instead — its members expand under the one alias on the server.
 export interface WorkspaceEntry {
-  dataset_id: string;
+  dataset_id?: string;
+  virtual_id?: string;
   alias: string;
 }
+
+// HEL-121: a saved file-selection (virtual dataset). Browser-safe projection —
+// opaque id only, never object paths.
+export interface VirtualDatasetInfo {
+  id: string;
+  display_name: string;
+  member_count: number;
+  schema_policy: "STRICT" | "UNION_BY_NAME";
+  mode: string;
+  promoted: boolean;
+  owner: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  warnings?: string[];
+}
+
+export const listVirtualDatasets = () =>
+  fetch(`${API}/virtual-datasets`).then((r) =>
+    j<{ virtual_datasets: VirtualDatasetInfo[] }>(r));
+
+export const saveVirtualDataset = (
+  display_name: string,
+  dataset_ids: string[],
+  schema_policy: "STRICT" | "UNION_BY_NAME",
+) =>
+  fetch(`${API}/virtual-datasets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name, dataset_ids, schema_policy }),
+  }).then((r) => j<VirtualDatasetInfo>(r));
+
+export const deleteVirtualDataset = (id: string) =>
+  fetch(`${API}/virtual-datasets/${id}`, { method: "DELETE" }).then((r) =>
+    j<{ deleted: boolean }>(r));
 
 export interface JoinHint {
   column: string;

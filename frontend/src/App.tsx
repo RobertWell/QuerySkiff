@@ -8,6 +8,7 @@ import {
   DatasetInfo, JoinHint, QueryResults, SchemaCol, WorkspaceEntry,
   cancelQuery, getMetadata, getSchema, listDatasets, queryResults, queryStatus,
   submitQuery, submitWorkspaceQuery, workspaceHints,
+  listVirtualDatasets, saveVirtualDataset, deleteVirtualDataset, type VirtualDatasetInfo,
 } from "./api";
 
 const STARTER_SQL = "SELECT *\nFROM data\nLIMIT 500;";
@@ -31,6 +32,10 @@ function fmtBytes(n: number | null): string {
   return `${n} B`;
 }
 
+// HEL-121: a workspace entry is keyed by whichever id it carries.
+const keyOf = (e: { dataset_id?: string; virtual_id?: string }) =>
+  e.dataset_id ?? e.virtual_id ?? "";
+
 export default function App() {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [dsError, setDsError] = useState("");
@@ -46,6 +51,9 @@ export default function App() {
   // HEL-112 workspace: entries (dataset + alias). Empty => single-dataset mode.
   const [workspace, setWorkspace] = useState<(WorkspaceEntry & { name: string })[]>([]);
   const [hints, setHints] = useState<JoinHint[]>([]);
+  // HEL-121: saved virtual datasets (file selections) for browse/load/delete.
+  const [virtuals, setVirtuals] = useState<VirtualDatasetInfo[]>([]);
+  const [vdMsg, setVdMsg] = useState("");
   const pollRef = useRef<number | null>(null);
   const wsMode = workspace.length > 0;
 
@@ -53,7 +61,37 @@ export default function App() {
     listDatasets()
       .then((d) => setDatasets(d.datasets))
       .catch((e) => setDsError(`could not list datasets: ${e.message}`));
+    loadVirtuals();
   }, []);
+
+  const loadVirtuals = useCallback(() => {
+    listVirtualDatasets().then((d) => setVirtuals(d.virtual_datasets)).catch(() => {});
+  }, []);
+
+  const saveWorkspaceAsVirtual = useCallback(async () => {
+    const ids = workspace.filter((e) => e.dataset_id).map((e) => e.dataset_id!);
+    if (ids.length === 0) return;
+    const name = window.prompt("Name this saved dataset:", `dataset (${ids.length} files)`);
+    if (!name) return;
+    setVdMsg("");
+    try {
+      const rec = await saveVirtualDataset(name, ids, "UNION_BY_NAME");
+      loadVirtuals();
+      setVdMsg(`saved "${rec.display_name}"${rec.warnings?.length ? " — " + rec.warnings[0] : ""}`);
+    } catch (e) {
+      setVdMsg(`save failed: ${(e as Error).message}`);
+    }
+  }, [workspace, loadVirtuals]);
+
+  const openVirtual = useCallback((v: VirtualDatasetInfo) => {
+    setSelected(null); setResults(null); setError(""); setVdMsg("");
+    setWorkspace([{ virtual_id: v.id, alias: "data", name: v.display_name }]);
+  }, []);
+
+  const removeVirtual = useCallback(async (id: string) => {
+    await deleteVirtualDataset(id).catch(() => {});
+    loadVirtuals();
+  }, [loadVirtuals]);
 
   const select = useCallback((ds: DatasetInfo) => {
     setSelected(ds);
@@ -76,18 +114,18 @@ export default function App() {
   }, []);
 
   const removeFromWorkspace = useCallback((id: string) => {
-    setWorkspace((ws) => ws.filter((e) => e.dataset_id !== id));
+    setWorkspace((ws) => ws.filter((e) => keyOf(e) !== id));
     setHints([]);
   }, []);
 
   const setAlias = useCallback((id: string, alias: string) => {
-    setWorkspace((ws) => ws.map((e) => (e.dataset_id === id ? { ...e, alias } : e)));
+    setWorkspace((ws) => ws.map((e) => (keyOf(e) === id ? { ...e, alias } : e)));
   }, []);
 
   // fetch join hints + starter SQL whenever the workspace set changes (aliases
   // valid and >=2 datasets). Debounced so alias typing doesn't spam the server.
   useEffect(() => {
-    if (workspace.length < 2) { setHints([]); return; }
+    if (workspace.length < 2 || workspace.some((e) => e.virtual_id)) { setHints([]); return; }
     const entries = workspace.map(({ dataset_id, alias }) => ({ dataset_id, alias }));
     const valid = entries.every((e) => /^[a-z][a-z0-9_]{0,29}$/.test(e.alias)) &&
       new Set(entries.map((e) => e.alias)).size === entries.length;
@@ -114,7 +152,9 @@ export default function App() {
     try {
       const { query_id } = wsMode
         ? await submitWorkspaceQuery(
-            workspace.map(({ dataset_id, alias }) => ({ dataset_id, alias })), sql)
+            workspace.map((e) => e.virtual_id
+              ? { virtual_id: e.virtual_id, alias: e.alias }
+              : { dataset_id: e.dataset_id!, alias: e.alias }), sql)
         : await submitQuery(selected!.dataset_id, sql);
       setQueryId(query_id);
       pollRef.current = window.setInterval(async () => {
@@ -228,6 +268,28 @@ export default function App() {
             </table>
           </div>
         )}
+      {virtuals.length > 0 && (
+        <div style={{ borderTop: "1px solid #eee", padding: "8px 10px" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 4 }}>
+            saved datasets
+          </div>
+          {virtuals.map((v) => (
+            <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 4,
+                                     fontSize: 12, padding: "2px 0" }}>
+              <button onClick={() => openVirtual(v)} title="query this saved dataset"
+                      style={{ flex: 1, textAlign: "left", border: "none", background: "none",
+                               cursor: "pointer", color: "#4338ca", overflow: "hidden",
+                               textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                🗂 {v.display_name} <span style={{ color: "#999" }}>({v.member_count})</span>
+              </button>
+              <button onClick={() => removeVirtual(v.id)} title="delete"
+                      style={{ border: "none", background: "none", cursor: "pointer",
+                               color: "#dc2626", fontSize: 15, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {vdMsg && <div style={{ fontSize: 11, color: "#555", padding: "0 10px 6px" }}>{vdMsg}</div>}
       </aside>
 
       {/* editor + results */}
@@ -240,21 +302,28 @@ export default function App() {
                 const badAlias = !/^[a-z][a-z0-9_]{0,29}$/.test(e.alias);
                 const dup = workspace.filter((x) => x.alias === e.alias).length > 1;
                 return (
-                  <span key={e.dataset_id}
+                  <span key={keyOf(e)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 4,
                                  border: `1px solid ${badAlias || dup ? "#dc2626" : "#c7d2fe"}`,
                                  borderRadius: 6, padding: "2px 4px 2px 8px", fontSize: 12,
                                  background: "#fff" }}>
-                    <input value={e.alias} onChange={(ev) => setAlias(e.dataset_id, ev.target.value)}
+                    <input value={e.alias} onChange={(ev) => setAlias(keyOf(e), ev.target.value)}
                            style={{ border: "none", outline: "none", width: 90, fontSize: 12,
                                     fontFamily: "monospace", color: "#4338ca" }} />
                     <span style={{ color: "#999" }}>= {e.name}</span>
-                    <button onClick={() => removeFromWorkspace(e.dataset_id)}
+                    <button onClick={() => removeFromWorkspace(keyOf(e))}
                             style={{ border: "none", background: "none", cursor: "pointer",
                                      color: "#999", fontSize: 14 }}>×</button>
                   </span>
                 );
               })}
+              <button onClick={saveWorkspaceAsVirtual}
+                      disabled={workspace.some((e) => e.virtual_id)}
+                      title={workspace.some((e) => e.virtual_id) ? "already a saved dataset" : "save this selection"}
+                      style={{ padding: "2px 8px", cursor: "pointer", fontSize: 12,
+                               border: "1px solid #c7d2fe", borderRadius: 6, background: "#eef2ff" }}>
+                💾 save as dataset
+              </button>
               <button onClick={() => { setWorkspace([]); setHints([]); }}
                       style={{ marginLeft: "auto", fontSize: 12, cursor: "pointer",
                                border: "1px solid #ddd", borderRadius: 4, padding: "2px 8px" }}>
