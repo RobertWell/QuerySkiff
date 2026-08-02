@@ -1,0 +1,72 @@
+# QuerySkiff security gates (HEL-147) — the RowRelay-grade scan adapted to a
+# scan-only gate (this repo ships an internal image, not a published library, so
+# the full exception-register/publish-coupling ceremony is not proportional).
+#
+# Covers the final image's exposure without building it: `fs` scans the shipped
+# Maven/npm dependency set, `image` scans the Dockerfile base images (OS layer).
+# HIGH/CRITICAL block; scanner/DB failure fails the job — never a silent pass.
+name: security
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"   # weekly Monday 03:23 UTC — new CVEs without commits
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+
+jobs:
+  cve-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Trivy v0.71.2
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sfL -o "$RUNNER_TEMP/trivy.tgz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.71.2/trivy_0.71.2_Linux-64bit.tar.gz
+          tar -xzf "$RUNNER_TEMP/trivy.tgz" -C "$RUNNER_TEMP/bin" trivy
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/trivy" --version
+
+      - name: Blocking dependency scan (HIGH/CRITICAL fail the gate)
+        run: |
+          trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+            --ignorefile .trivyignore.yaml \
+            --format sarif --output trivy-blocking.sarif .
+
+      - name: Blocking base-image scans (the FROM lines of backend-jvm/Dockerfile)
+        run: |
+          for img in $(grep -E '^FROM ' backend-jvm/Dockerfile | awk '{print $2}' | sort -u); do
+            echo "== scanning base image: $img"
+            trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+              --format table "$img"
+          done
+
+      - name: Full-severity report (non-blocking, always)
+        if: always()
+        run: |
+          trivy fs --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output trivy-full.json . || true
+
+      - name: Upload SARIF to code scanning
+        if: always() && hashFiles('trivy-blocking.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-blocking.sarif
+
+      - name: Retain reports (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cve-reports
+          if-no-files-found: ignore
+          path: |
+            trivy-blocking.sarif
+            trivy-full.json
