@@ -100,6 +100,38 @@ test("workspace join flow: add two datasets, see hints, save as virtual dataset"
   expect(body.display_name).toBe("my pair");
 });
 
+test("HEL-150: a running query shows elapsed time with cancel still available", async ({ page }) => {
+  await mockApi(page);
+  // submit returns a query id; status stays "running" so the poll keeps going.
+  await page.route(`${API}/queries`, (r) => {
+    if (r.request().method() === "POST") return r.fulfill({ json: { query_id: "q1" } });
+    return r.fallback();
+  });
+  await page.route(`${API}/queries/*`, (r) => {
+    if (r.request().method() === "GET") return r.fulfill({ json: { status: "running" } });
+    if (r.request().method() === "DELETE") return r.fulfill({ json: { cancelled: true } });
+    return r.fallback();
+  });
+  await page.goto("/queryskiff/");
+  await page.getByText("alpha.parquet").click();          // becomes table `data`
+  await page.getByRole("button", { name: "Run" }).click();
+  // elapsed readout appears and both the running label + Cancel are shown
+  await expect(page.getByRole("button", { name: /running… \d+\.\d+s/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
+});
+
+test("HEL-150: an invalid workspace alias explains why join hints are blocked", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/queryskiff/");
+  await page.getByTitle("add to join workspace").first().click();
+  await page.getByTitle("add to join workspace").first().click();
+  await expect(page.getByText("shared columns:")).toBeVisible();   // hints load with valid aliases
+  // break the first alias -> hints must disappear WITH a visible reason, not silently
+  await page.getByTestId("ws-alias").first().fill("1bad");
+  await expect(page.getByText(/join hints unavailable/)).toBeVisible();
+  await expect(page.getByText("shared columns:")).not.toBeVisible();
+});
+
 test("deleting a saved virtual dataset issues the DELETE", async ({ page }) => {
   await mockApi(page);
   let deleted = "";

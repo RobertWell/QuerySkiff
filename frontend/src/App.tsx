@@ -54,7 +54,13 @@ export default function App() {
   // HEL-121: saved virtual datasets (file selections) for browse/load/delete.
   const [virtuals, setVirtuals] = useState<VirtualDatasetInfo[]>([]);
   const [vdMsg, setVdMsg] = useState("");
-  const pollRef = useRef<number | null>(null);
+  // HEL-150: elapsed-time feedback while a query runs + a reason when join hints
+  // can't load.
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [hintsMsg, setHintsMsg] = useState("");
+  const pollRef = useRef<number | null>(null);   // status poll (setTimeout id)
+  const tickRef = useRef<number | null>(null);    // elapsed-display ticker (setInterval id)
+  const startRef = useRef<number>(0);
   const wsMode = workspace.length > 0;
 
   useEffect(() => {
@@ -125,11 +131,23 @@ export default function App() {
   // fetch join hints + starter SQL whenever the workspace set changes (aliases
   // valid and >=2 datasets). Debounced so alias typing doesn't spam the server.
   useEffect(() => {
-    if (workspace.length < 2 || workspace.some((e) => e.virtual_id)) { setHints([]); return; }
+    if (workspace.length < 2 || workspace.some((e) => e.virtual_id)) { setHints([]); setHintsMsg(""); return; }
     const entries = workspace.map(({ dataset_id, alias }) => ({ dataset_id, alias }));
-    const valid = entries.every((e) => /^[a-z][a-z0-9_]{0,29}$/.test(e.alias)) &&
-      new Set(entries.map((e) => e.alias)).size === entries.length;
-    if (!valid) return;
+    // HEL-150: don't silently drop hints on an invalid/duplicate alias — say why.
+    const bad = entries.find((e) => !/^[a-z][a-z0-9_]{0,29}$/.test(e.alias));
+    if (bad) {
+      setHints([]);
+      setHintsMsg(`join hints unavailable — alias "${bad.alias || "(empty)"}" is invalid `
+        + `(lowercase letter, then letters/digits/underscore)`);
+      return;
+    }
+    const dup = entries.map((e) => e.alias).find((a, i, arr) => arr.indexOf(a) !== i);
+    if (dup) {
+      setHints([]);
+      setHintsMsg(`join hints unavailable — alias "${dup}" is used by more than one dataset`);
+      return;
+    }
+    setHintsMsg("");
     const t = window.setTimeout(() => {
       workspaceHints(entries)
         .then((h) => { setHints(h.hints); if (sql === STARTER_SQL || !sql.trim()) setSql(h.starter_sql); })
@@ -140,8 +158,10 @@ export default function App() {
   }, [workspace]);
 
   const stopPolling = () => {
-    if (pollRef.current != null) window.clearInterval(pollRef.current);
+    if (pollRef.current != null) window.clearTimeout(pollRef.current);
+    if (tickRef.current != null) window.clearInterval(tickRef.current);
     pollRef.current = null;
+    tickRef.current = null;
   };
 
   const run = useCallback(async () => {
@@ -149,6 +169,10 @@ export default function App() {
     setRunning(true);
     setError("");
     setResults(null);
+    setElapsedMs(0);
+    startRef.current = Date.now();
+    // lightweight ticker so the elapsed readout is smooth regardless of poll cadence
+    tickRef.current = window.setInterval(() => setElapsedMs(Date.now() - startRef.current), 250);
     try {
       const { query_id } = wsMode
         ? await submitWorkspaceQuery(
@@ -157,7 +181,9 @@ export default function App() {
               : { dataset_id: e.dataset_id!, alias: e.alias }), sql)
         : await submitQuery(selected!.dataset_id, sql);
       setQueryId(query_id);
-      pollRef.current = window.setInterval(async () => {
+      // HEL-150: recursive poll that BACKS OFF after 10s (500ms → 2s) so a long
+      // query doesn't hammer the status endpoint indefinitely at 500ms.
+      const poll = async () => {
         try {
           const st = await queryStatus(query_id);
           if (st.status === "done") {
@@ -168,14 +194,19 @@ export default function App() {
             stopPolling();
             setError(st.status === "error" ? st.error || "query failed" : "cancelled");
             setRunning(false);
+          } else {
+            const delay = Date.now() - startRef.current < 10_000 ? 500 : 2_000;
+            pollRef.current = window.setTimeout(poll, delay);
           }
         } catch (e) {
           stopPolling();
           setError((e as Error).message);
           setRunning(false);
         }
-      }, 500);
+      };
+      pollRef.current = window.setTimeout(poll, 500);
     } catch (e) {
+      stopPolling();
       setError((e as Error).message);
       setRunning(false);
     }
@@ -308,6 +339,7 @@ export default function App() {
                                  borderRadius: 6, padding: "2px 4px 2px 8px", fontSize: 12,
                                  background: "#fff" }}>
                     <input value={e.alias} onChange={(ev) => setAlias(keyOf(e), ev.target.value)}
+                           data-testid="ws-alias"
                            style={{ border: "none", outline: "none", width: 90, fontSize: 12,
                                     fontFamily: "monospace", color: "#4338ca" }} />
                     <span style={{ color: "#999" }}>= {e.name}</span>
@@ -330,6 +362,9 @@ export default function App() {
                 clear
               </button>
             </div>
+            {hintsMsg && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#b45309" }}>{hintsMsg}</div>
+            )}
             {hints.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
                 shared columns:{" "}
@@ -357,7 +392,7 @@ export default function App() {
                       borderBottom: "1px solid #eee" }}>
           <button onClick={run} disabled={running || (!wsMode && !selected)}
                   style={{ padding: "6px 18px", cursor: "pointer" }}>
-            {running ? "running…" : "Run"}
+            {running ? `running… ${(elapsedMs / 1000).toFixed(1)}s` : "Run"}
           </button>
           {running && (
             <button onClick={cancel} style={{ padding: "6px 12px", cursor: "pointer" }}>
