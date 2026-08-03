@@ -144,6 +144,30 @@ describe("virtual datasets", () => {
     expect(await screen.findByText(/saved "my dataset"/)).toBeInTheDocument();
   });
 
+  it("saves with STRICT when the schema-policy toggle is switched", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("strict set");
+    a.saveVirtualDataset.mockResolvedValue({ id: "v2", display_name: "strict set", warnings: [] });
+    render(<App />);
+    await screen.findByText("📄 Sales 2026");
+    fireEvent.click(screen.getAllByTitle("add to join workspace")[0]);
+    fireEvent.change(await screen.findByTestId("schema-policy"), { target: { value: "STRICT" } });
+    fireEvent.click(screen.getByText("💾 save as dataset"));
+    await waitFor(() => expect(a.saveVirtualDataset).toHaveBeenCalledWith("strict set", ["d1"], "STRICT"));
+  });
+
+  it("surfaces the backend's save warning in the sidebar message", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("big set");
+    a.saveVirtualDataset.mockResolvedValue({
+      id: "v3", display_name: "big set",
+      warnings: ["selection has 900 files — consider promoting to a managed table"],
+    });
+    render(<App />);
+    await screen.findByText("📄 Sales 2026");
+    fireEvent.click(screen.getAllByTitle("add to join workspace")[0]);
+    fireEvent.click(await screen.findByText("💾 save as dataset"));
+    expect(await screen.findByText(/saved "big set" — selection has 900 files/)).toBeInTheDocument();
+  });
+
   it("browses and opens a saved virtual dataset", async () => {
     a.listVirtualDatasets.mockResolvedValue({ virtual_datasets: [
       { id: "v9", display_name: "quarter mix", member_count: 3, schema_policy: "UNION_BY_NAME", mode: "m", promoted: false, owner: null, created_at: null, expires_at: null },

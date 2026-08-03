@@ -54,6 +54,9 @@ export default function App() {
   // HEL-121: saved virtual datasets (file selections) for browse/load/delete.
   const [virtuals, setVirtuals] = useState<VirtualDatasetInfo[]>([]);
   const [vdMsg, setVdMsg] = useState("");
+  // HEL-148: schema policy chosen at save time. UNION_BY_NAME merges columns by
+  // name across files; STRICT requires every member's schema to match exactly.
+  const [schemaPolicy, setSchemaPolicy] = useState<"STRICT" | "UNION_BY_NAME">("UNION_BY_NAME");
   // HEL-150: elapsed-time feedback while a query runs + a reason when join hints
   // can't load.
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -81,13 +84,13 @@ export default function App() {
     if (!name) return;
     setVdMsg("");
     try {
-      const rec = await saveVirtualDataset(name, ids, "UNION_BY_NAME");
+      const rec = await saveVirtualDataset(name, ids, schemaPolicy);
       loadVirtuals();
       setVdMsg(`saved "${rec.display_name}"${rec.warnings?.length ? " — " + rec.warnings[0] : ""}`);
     } catch (e) {
       setVdMsg(`save failed: ${(e as Error).message}`);
     }
-  }, [workspace, loadVirtuals]);
+  }, [workspace, loadVirtuals, schemaPolicy]);
 
   const openVirtual = useCallback((v: VirtualDatasetInfo) => {
     setSelected(null); setResults(null); setError(""); setVdMsg("");
@@ -349,6 +352,16 @@ export default function App() {
                   </span>
                 );
               })}
+              <select value={schemaPolicy} data-testid="schema-policy"
+                      onChange={(e) => setSchemaPolicy(e.target.value as "STRICT" | "UNION_BY_NAME")}
+                      title={schemaPolicy === "STRICT"
+                        ? "STRICT: every file's schema must match exactly"
+                        : "UNION BY NAME: columns merged by name; missing ones become NULL"}
+                      style={{ fontSize: 11, border: "1px solid #c7d2fe", borderRadius: 6,
+                               padding: "2px 4px", background: "#fff", color: "#4338ca" }}>
+                <option value="UNION_BY_NAME">union by name</option>
+                <option value="STRICT">strict schema</option>
+              </select>
               <button onClick={saveWorkspaceAsVirtual}
                       disabled={workspace.some((e) => e.virtual_id)}
                       title={workspace.some((e) => e.virtual_id) ? "already a saved dataset" : "save this selection"}
