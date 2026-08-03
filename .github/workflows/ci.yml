@@ -47,6 +47,17 @@ jobs:
         run: |
           npm ci
           npm run build
+      # HEL-181: vitest line-coverage gate — a measurable number the Playwright
+      # e2e suite (black-box, no instrumentation) can't provide.
+      - name: Unit tests + coverage (vitest)
+        working-directory: frontend
+        run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
 
   e2e:
     runs-on: ubuntu-latest

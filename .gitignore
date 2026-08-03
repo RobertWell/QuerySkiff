@@ -8,3 +8,6 @@ backend/queryskiff/static/
 frontend/test-results/
 frontend/playwright-report/
 frontend/e2e-results.xml
+
+# HEL-181: vitest coverage output
+frontend/coverage/

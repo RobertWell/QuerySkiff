@@ -14,7 +14,7 @@ import {
 const STARTER_SQL = "SELECT *\nFROM data\nLIMIT 500;";
 
 // derive a valid, unique alias (^[a-z][a-z0-9_]{0,29}$) from a dataset name
-function aliasFor(name: string, taken: Set<string>): string {
+export function aliasFor(name: string, taken: Set<string>): string {
   let base = name.toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^[^a-z]+/, "");
   if (!base) base = "t";
   base = base.slice(0, 30);
@@ -24,7 +24,7 @@ function aliasFor(name: string, taken: Set<string>): string {
   return a;
 }
 
-function fmtBytes(n: number | null): string {
+export function fmtBytes(n: number | null): string {
   if (n == null) return "";
   if (n > 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`;
   if (n > 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
@@ -33,7 +33,7 @@ function fmtBytes(n: number | null): string {
 }
 
 // HEL-121: a workspace entry is keyed by whichever id it carries.
-const keyOf = (e: { dataset_id?: string; virtual_id?: string }) =>
+export const keyOf = (e: { dataset_id?: string; virtual_id?: string }) =>
   e.dataset_id ?? e.virtual_id ?? "";
 
 export default function App() {
