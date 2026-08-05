@@ -1,22 +1,27 @@
-# QuerySkiff (HEL-90) — multi-stage: React build → Python runtime with DuckDB.
-FROM node:20-slim AS frontend
-WORKDIR /fe
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install --no-audit --no-fund
-COPY frontend/ ./
-# vite outDir is ../backend/queryskiff/static relative to frontend/ — override to
-# a local path inside this stage
-RUN npx vite build --outDir /fe-dist --emptyOutDir
-
-FROM python:3.11-slim
-WORKDIR /app
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-# pre-install the httpfs extension at BUILD time so the runtime never needs
-# network access to extensions.duckdb.org (and engine's INSTALL is a no-op hit
-# on the local cache)
-RUN python -c "import duckdb; c = duckdb.connect(); c.execute('INSTALL httpfs'); c.close()"
-COPY backend/queryskiff ./queryskiff
-COPY --from=frontend /fe-dist ./queryskiff/static
-EXPOSE 5400
-CMD ["python", "-m", "uvicorn", "queryskiff.app:app", "--host", "0.0.0.0", "--port", "5400"]
+# QuerySkiff root Dockerfile — RETIRED (HEL-149).
+#
+# The HEL-95 cutover moved QuerySkiff to Kotlin/Quarkus. Both k8s deployments
+# (k8s/deployment.yaml and k8s/deployment-jvm.yaml) run
+# docker.io/roguerzzz123/queryskiff-jvm:latest, and prod was verified running
+# ONLY that image on 2026-08-05 (both pods, 0 restarts, 4d+ uptime).
+#
+# The old Python runtime build previously lived here and would still produce a
+# deployable uvicorn image, so an ordinary `docker build .` at the repo root
+# silently built the retired stack. It is preserved verbatim (for reference and
+# for the pre-cutover rollback story) at:
+#
+#     backend/Dockerfile.python-retired
+#
+# THE SUPPORTED BUILD IS:
+#
+#     docker build -f backend-jvm/Dockerfile -t queryskiff-jvm .
+#
+# This file fails loudly rather than quietly building the wrong thing. The
+# backend/ Python tree itself is intentionally still present until the HEL-131
+# soak reaches its go/no-go boundary — quarantining the BUILD removes the
+# accident without destroying the rollback material.
+FROM alpine:3.20
+RUN echo "QuerySkiff: the root Dockerfile is retired (HEL-149)." \
+ && echo "Use: docker build -f backend-jvm/Dockerfile -t queryskiff-jvm ." \
+ && echo "The retired Python build is kept at backend/Dockerfile.python-retired." \
+ && exit 1
