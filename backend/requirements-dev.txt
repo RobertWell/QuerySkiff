@@ -1,4 +1,0 @@
-# test-only deps (runtime image installs requirements.txt exclusively)
-pytest>=8
-httpx>=0.27
-requests>=2.31
