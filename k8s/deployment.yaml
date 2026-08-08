@@ -25,8 +25,29 @@ spec:
           # image roguerzzz123/queryskiff:latest — still published; rollback =
           # revert this line). Same env/port/probe contract; contract suite
           # 35/0 against this exact image, canary-proven in-cluster pre-flip.
-          image: docker.io/roguerzzz123/queryskiff-jvm:latest
-          imagePullPolicy: Always
+          #
+          # HEL-131, 2026-08-08: PINNED BY DIGEST. This was `:latest` with
+          # pullPolicy: Always, which meant nothing recorded which build was
+          # running and any restart could silently pull different bytes. That is
+          # not hypothetical here — it is exactly why the Cycle-3 soak could not
+          # initially tell whether prod matched `main`, and it cost a day
+          # establishing that the soaked artifact was a Java 17 build while main
+          # had moved to 21. A soak is meaningless if the artifact can change
+          # underneath it.
+          #
+          # This digest is the 2026-08-06 rebuild from main, read back from the
+          # RUNNING pod's imageID (not from `:latest`, which is a moving target
+          # and would defeat the point): Java 21.0.11 LTS, Quarkus 3.6.4 with
+          # kotlin + micrometer, /q/metrics serving real Prometheus exposition.
+          #
+          # To ship a new build: push it, read the digest back from the registry,
+          # and update this line. `:latest` still moves for convenience, but prod
+          # no longer follows it.
+          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:a89f2d657072dfa14dc0b3fd3ef0de4558477bc4e9380b3a85c447b7550cb535
+          # IfNotPresent is correct with a digest: the digest IS the identity, so
+          # a re-pull can only ever fetch the same bytes. Always would just add a
+          # registry round-trip per restart.
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5400
           env:
