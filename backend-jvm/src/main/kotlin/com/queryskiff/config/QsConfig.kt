@@ -7,9 +7,9 @@ import jakarta.enterprise.context.ApplicationScoped
  * QUERYSKIFF_* names; MINIO_* for storage credentials — injected by the
  * platform, never committed, never sent to the browser).
  *
- * Divergence note: the Python module honors a DATARAFT_* fallback for the
- * HEL-98 transition window; HEL-118 removes it, so the port ships without it
- * (one namespace, not two — approved migration note).
+ * Naming: QUERYSKIFF_* only. The old DATARAFT_* fallback lived solely in the
+ * Python backend (deleted 2026-08-06, HEL-149); the transition window closed
+ * with HEL-118 (one namespace, not two).
  */
 @ApplicationScoped
 class QsConfig {
