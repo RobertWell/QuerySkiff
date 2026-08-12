@@ -12,8 +12,8 @@
   <version>0.1.0-SNAPSHOT</version>
 
   <properties>
-    <kotlin.version>1.9.22</kotlin.version>
-    <quarkus.version>3.6.4</quarkus.version>
+    <kotlin.version>2.4.0</kotlin.version>
+    <quarkus.version>3.38.1</quarkus.version>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
@@ -39,7 +39,7 @@
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+      <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.module</groupId>
@@ -70,7 +70,7 @@
     <dependency>
       <groupId>io.minio</groupId>
       <artifactId>minio</artifactId>
-      <version>8.5.12</version>
+      <version>8.6.0</version>
     </dependency>
     <!-- HEL-113 Trino engine path (QUERYSKIFF_ENGINE=trino); client tracks the
          deployed server (trinodb/trino:476) -->
