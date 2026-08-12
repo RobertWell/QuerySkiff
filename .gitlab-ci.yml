@@ -1,0 +1,84 @@
+# QuerySkiff CI — build, prove, and publish the JVM image.
+#
+# WHY THIS EXISTS: QuerySkiff had GitHub Actions that only *tested*; nothing
+# published an image, so every prod image was hand-built. That is how the prod
+# deployment ended up on Quarkus 3.6.4 (Dec 2023) carrying a CRITICAL and 30
+# HIGH CVEs while main had moved on — HEL-138 finding F1. An unpublished
+# artifact path means "fixed in git" and "fixed in prod" can drift for years.
+#
+# Three lessons from the hello-sre/hello-stock images are deliberately encoded:
+#  1. SMOKE THE IMAGE BEFORE PUSHING. A green test suite proves the SOURCE
+#     works; it does not prove the built container starts. hello-sre shipped an
+#     exporter whose Dockerfile COPY list missed a module — build green, tests
+#     green, prod crash-looped and lost its only Mimir source for ~5 minutes.
+#     So the entrypoint is exercised INSIDE the image before it is pushed.
+#  2. :SHA ONLY, never :latest. A `:latest` push silently auto-promotes every
+#     build to any deployment tracking it (HEL-277). Promotion must stay a
+#     reviewed digest pin.
+#  3. PRINT THE DIGEST. Promotion pins by digest, and a re-tag mints a NEW one,
+#     so the pushed digest is emitted as `pin=` rather than being re-derived.
+stages: [test, build]
+
+variables:
+  REGISTRY_NAMESPACE: roguerzzz123
+  IMAGE_NAME: queryskiff-jvm
+
+backend-tests:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  timeout: 40 minutes
+  cache:
+    key: queryskiff-m2
+    paths: [.m2/repository]
+  script:
+    - mvn -f backend-jvm/pom.xml -B -Dmaven.repo.local=.m2/repository test
+  artifacts:
+    when: always
+    reports:
+      junit: backend-jvm/target/surefire-reports/TEST-*.xml
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+build-image:
+  stage: build
+  image: docker:27
+  timeout: 40 minutes
+  tags: [privileged]
+  services:
+    - name: docker:27-dind
+      alias: docker
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - |
+      set -e
+      for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+      IMAGE="$REGISTRY_NAMESPACE/$IMAGE_NAME"; TAG="$CI_COMMIT_SHORT_SHA"
+      echo "=== build $IMAGE:$TAG"
+      docker build --pull -t "$IMAGE:$TAG" -f backend-jvm/Dockerfile .
+      # (1) prove the built image actually starts before it can be promoted
+      echo "=== smoke: run the entrypoint inside the image"
+      docker run --rm --entrypoint sh "$IMAGE:$TAG" -c \
+        'test -f /app/quarkus-run.jar || test -d /app/lib' \
+        && echo "    image layout ok"
+      docker run -d --name qs-smoke -p 5400:5400 "$IMAGE:$TAG" >/dev/null
+      ok=0; for i in $(seq 1 30); do
+        docker logs qs-smoke 2>&1 | grep -q "started in" && { ok=1; break; }
+        docker logs qs-smoke 2>&1 | grep -qiE "exception in thread|failed to start" && break
+        sleep 2
+      done
+      docker logs qs-smoke 2>&1 | tail -5; docker rm -f qs-smoke >/dev/null 2>&1 || true
+      [ "$ok" = "1" ] || { echo "SMOKE FAILED — the image does not start; refusing to push"; exit 1; }
+      echo "=== smoke OK"
+      # (2) :SHA only — promotion stays a reviewed digest pin
+      echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+      docker push "$IMAGE:$TAG"
+      # (3) emit the digest the pin must use
+      DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$TAG" | cut -d@ -f2)
+      echo "pin=$IMAGE@$DIGEST"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
