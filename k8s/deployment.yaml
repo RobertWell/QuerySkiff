@@ -43,7 +43,13 @@ spec:
           # To ship a new build: push it, read the digest back from the registry,
           # and update this line. `:latest` still moves for convenience, but prod
           # no longer follows it.
-          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:a89f2d657072dfa14dc0b3fd3ef0de4558477bc4e9380b3a85c447b7550cb535
+          # HEL-138 F1 (2026-08-13, owner: release): Quarkus 3.6.4 -> 3.38.1 +
+          # minio 8.6.0. Scanned on the built image: 1 CRITICAL + 30 HIGH -> 0/0
+          # (bouncycastle 1.77 -> 1.84). First image published by GitLab CI
+          # (project root/queryskiff, pipeline 1558) instead of by hand — the
+          # hand-built path is why prod sat on a Dec-2023 platform.
+          # Rollback = @sha256:a89f2d657072 (the pre-bump prod image).
+          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:2de753bc4df6aa6b61870fe3f5f4346428b6647e42aec7eda4c765f5e5ff8e6f
           # IfNotPresent is correct with a digest: the digest IS the identity, so
           # a re-pull can only ever fetch the same bytes. Always would just add a
           # registry round-trip per restart.
