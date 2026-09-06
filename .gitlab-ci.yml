@@ -49,7 +49,11 @@ build-image:
   services:
     - name: docker:27-dind
       alias: docker
-      command: ["--tls=false"]
+      # HEL-388: pull base images through the LAN pull-through cache (hello-sre
+      # hello-gitlab/apps/registry-mirror, fixed ClusterIP — dind has no cluster DNS).
+      # Cached layers keep serving while registry-1.docker.io is down; pushes still
+      # go straight to Docker Hub. Plain HTTP in-cluster, hence insecure-registry.
+      command: ["--tls=false", "--registry-mirror", "http://10.152.183.230:5000", "--insecure-registry", "10.152.183.230:5000"]
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
