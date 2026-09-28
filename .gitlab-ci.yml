@@ -125,8 +125,12 @@ cve-scan:
   script:
     - trivy --version
     - |
-      echo "=== blocking dependency scan (HIGH/CRITICAL fail the gate)"
-      trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+      # --offline-scan: trivy otherwise resolves every Maven POM from Central to build
+      # the dependency tree and Central answered 429 Too Many Requests on the first run
+      # (job 14970). Offline covers the npm lockfile fully and the DECLARED Maven deps;
+      # the transitive truth comes from cve-scan-artifact on the built image below.
+      echo "=== blocking dependency scan (HIGH/CRITICAL fail the gate; offline)"
+      trivy fs --offline-scan --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
         --ignorefile .trivyignore.yaml --format table .
     - |
       echo "=== blocking base-image scans (the FROM lines of backend-jvm/Dockerfile)"
@@ -135,7 +139,7 @@ cve-scan:
         trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$img"
       done
   after_script:
-    - trivy fs --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
+    - trivy fs --offline-scan --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
   artifacts:
     when: always
     paths: [trivy-full.json]
@@ -191,4 +195,33 @@ build-image:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# The shipped artefact itself: every jar the uber/fast-jar actually carries, plus
+# the OS layer — what the offline fs scan cannot see. On main it follows
+# build-image (same :SHA); on the weekly schedule it re-scans the current main
+# :SHA so new CVEs are caught without a commit. HIGH/CRITICAL with a fix block
+# (the register .trivyignore.yaml lists accepted ones); unfixed are reported.
+cve-scan-artifact:
+  stage: build
+  image:
+    name: aquasec/trivy:0.71.2
+    entrypoint: [""]
+  timeout: 45 minutes
+  needs:
+    - job: build-image
+      optional: true
+  variables:
+    TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+    IMAGE_REF: "$REGISTRY_NAMESPACE/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
+  script:
+    - echo "=== artefact scan of $IMAGE_REF"
+    - trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output queryskiff-artifact-cve.json "$IMAGE_REF"
+    - trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --ignorefile .trivyignore.yaml --format table "$IMAGE_REF"
+  artifacts:
+    when: always
+    paths: [queryskiff-artifact-cve.json]
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_SCAN == "1"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
