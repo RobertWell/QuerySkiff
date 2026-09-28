@@ -77,23 +77,22 @@ frontend-tests:
 
 # HEL-95 (ported): the browser e2e suite drives the REAL production bundle via
 # `vite preview` with the API mocked at the network layer (playwright.config.ts
-# webServer). Chromium is installed with its OS deps and cached between runs so
-# the LAN link downloads it once per browser version, not per pipeline.
+# webServer). The official Playwright image carries chromium + its OS deps and
+# is pulled ONCE per runner node (IfNotPresent); the first attempt installed
+# them with apt on every run and spent 40+ minutes on the LAN link (job 14980).
+# The tag MUST match @playwright/test in frontend/package-lock.json (1.62.1).
 frontend-e2e:
   stage: test
-  image: node:20-bookworm
-  timeout: 45 minutes
-  variables:
-    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/frontend/.ms-playwright
+  image: mcr.microsoft.com/playwright:v1.62.1-noble
+  timeout: 60 minutes
   cache:
     key:
       files: [frontend/package-lock.json]
-    paths: [frontend/.npm, frontend/.ms-playwright]
+    paths: [frontend/.npm]
   script:
     - cd frontend
     - npm ci --cache .npm --prefer-offline
     - npm run build
-    - npx playwright install --with-deps chromium
     - CI=1 npx playwright test
   artifacts:
     when: always
