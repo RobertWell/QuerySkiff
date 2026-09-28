@@ -13,7 +13,7 @@
 
   <properties>
     <kotlin.version>2.4.0</kotlin.version>
-    <quarkus.version>3.38.1</quarkus.version>
+    <quarkus.version>3.38.3</quarkus.version>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
@@ -22,6 +22,27 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- CVE gate (cve-scan-artifact, 2026-09-28): bcprov 1.84 arrives transitively
+           via io.minio:minio 8.6.0 and carries CVE-2026-8763 (CRITICAL) +
+           CVE-2026-13506 (HIGH), both fixed in 1.85. Same pin as hello-stock's
+           backend (HEL-137): the three artifacts are one release train and must
+           move together. Remove once minio ships a fixed transitive. -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcutil-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+
       <dependency>
         <groupId>io.quarkus</groupId>
         <artifactId>quarkus-bom</artifactId>
