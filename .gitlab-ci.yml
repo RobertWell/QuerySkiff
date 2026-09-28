@@ -119,9 +119,18 @@ cve-scan:
   image:
     name: aquasec/trivy:0.71.2
     entrypoint: [""]
-  timeout: 45 minutes
+  timeout: 60 minutes
   variables:
     TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+    # The vuln DB (~60 MiB) and the Java DB (~930 MiB, needed to read jars inside
+    # the runtime image) are cached between pipelines; job 14975 spent its whole
+    # default 5-minute trivy timeout downloading the Java DB over the LAN link.
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+    TRIVY_TIMEOUT: 40m
+    TRIVY_SKIP_VERSION_CHECK: "true"
+  cache:
+    key: trivy-dbs
+    paths: [.trivycache]
   script:
     - trivy --version
     - |
@@ -133,11 +142,11 @@ cve-scan:
       trivy fs --offline-scan --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
         --ignorefile .trivyignore.yaml --format table .
     - |
-      echo "=== blocking base-image scans (the FROM lines of backend-jvm/Dockerfile)"
-      for img in $(grep -E '^FROM ' backend-jvm/Dockerfile | awk '{print $2}' | sort -u); do
-        echo "== scanning base image: $img"
-        trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$img"
-      done
+      # Only the RUNTIME base (the last FROM) ships; node/maven are build stages that
+      # never reach the registry, and each is a ~1 GiB pull on this link.
+      img=$(grep -E '^FROM ' backend-jvm/Dockerfile | tail -1 | awk '{print $2}')
+      echo "=== blocking base-image scan of the runtime stage: $img"
+      trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$img"
   after_script:
     - trivy fs --offline-scan --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
   artifacts:
@@ -207,13 +216,19 @@ cve-scan-artifact:
   image:
     name: aquasec/trivy:0.71.2
     entrypoint: [""]
-  timeout: 45 minutes
+  timeout: 60 minutes
   needs:
     - job: build-image
       optional: true
   variables:
     TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+    TRIVY_TIMEOUT: 40m
+    TRIVY_SKIP_VERSION_CHECK: "true"
     IMAGE_REF: "$REGISTRY_NAMESPACE/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
+  cache:
+    key: trivy-dbs
+    paths: [.trivycache]
   script:
     - echo "=== artefact scan of $IMAGE_REF"
     - trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output queryskiff-artifact-cve.json "$IMAGE_REF"
