@@ -17,6 +17,12 @@
 #     reviewed digest pin.
 #  3. PRINT THE DIGEST. Promotion pins by digest, and a re-tag mints a NEW one,
 #     so the pushed digest is emitted as `pin=` rather than being re-derived.
+# 2026-09-27: GitHub Actions retired (owner: "remove all GitHub CI behaviour").
+# The three gates that only existed there — frontend vitest coverage, the
+# Playwright e2e against the real bundle, and the trivy CVE scan with its weekly
+# schedule — live here now, so one CI is the truth. The weekly scan is a GitLab
+# pipeline schedule on main (Mon 03:23 UTC) that sets SCHEDULED_SCAN=1; the
+# other jobs skip scheduled pipelines.
 stages: [test, build]
 
 variables:
@@ -38,6 +44,104 @@ backend-tests:
       junit: backend-jvm/target/surefire-reports/TEST-*.xml
     expire_in: 7 days
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# HEL-181 (ported from .github/workflows/ci.yml): typecheck + production build,
+# then the vitest line-coverage gate — a measurable number the black-box
+# Playwright suite cannot provide.
+frontend-tests:
+  stage: test
+  image: node:20-bookworm-slim
+  timeout: 30 minutes
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [frontend/.npm]
+  script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+    - npm run test:coverage
+  artifacts:
+    when: always
+    paths: [frontend/coverage/]
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# HEL-95 (ported): the browser e2e suite drives the REAL production bundle via
+# `vite preview` with the API mocked at the network layer (playwright.config.ts
+# webServer). Chromium is installed with its OS deps and cached between runs so
+# the LAN link downloads it once per browser version, not per pipeline.
+frontend-e2e:
+  stage: test
+  image: node:20-bookworm
+  timeout: 45 minutes
+  variables:
+    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/frontend/.ms-playwright
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [frontend/.npm, frontend/.ms-playwright]
+  script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+    - npx playwright install --with-deps chromium
+    - CI=1 npx playwright test
+  artifacts:
+    when: always
+    paths: [frontend/e2e-results.xml, frontend/test-results/]
+    reports:
+      junit: frontend/e2e-results.xml
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# HEL-147 (ported from .github/workflows/security.yml): the final image's
+# exposure without building it — `fs` scans the shipped Maven/npm dependency
+# set, `image` scans the Dockerfile base images. HIGH/CRITICAL block; a scanner
+# or DB failure fails the job, never a silent pass. Runs on every push/MR AND on
+# the weekly schedule (new CVEs arrive without commits). Uses the trivy image
+# from Docker Hub (LAN mirror) instead of downloading the binary from GitHub —
+# that download reset on three repos' jobs on 2026-09-27 (HEL-529).
+cve-scan:
+  stage: test
+  image:
+    name: aquasec/trivy:0.71.2
+    entrypoint: [""]
+  timeout: 45 minutes
+  variables:
+    TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+  script:
+    - trivy --version
+    - |
+      echo "=== blocking dependency scan (HIGH/CRITICAL fail the gate)"
+      trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+        --ignorefile .trivyignore.yaml --format table .
+    - |
+      echo "=== blocking base-image scans (the FROM lines of backend-jvm/Dockerfile)"
+      for img in $(grep -E '^FROM ' backend-jvm/Dockerfile | awk '{print $2}' | sort -u); do
+        echo "== scanning base image: $img"
+        trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$img"
+      done
+  after_script:
+    - trivy fs --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
+  artifacts:
+    when: always
+    paths: [trivy-full.json]
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULED_SCAN == "1"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
 
@@ -85,4 +189,6 @@ build-image:
       DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$TAG" | cut -d@ -f2)
       echo "pin=$IMAGE@$DIGEST"
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

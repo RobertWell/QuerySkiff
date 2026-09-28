@@ -1,6 +1,6 @@
 # HEL-147 Trivy exception register for QuerySkiff.
 # Each entry is a KNOWN HIGH/CRITICAL in a transitive dependency whose fix is a
-# framework/library upgrade. The scan gate (.github/workflows/security.yml) fails on
+# framework/library upgrade. The scan gate (.gitlab-ci.yml `cve-scan`) fails on
 # any HIGH/CRITICAL NOT listed here, so new exposure still blocks; these expire
 # 2026-08-17 to force re-triage. Root remediation = Quarkus 3.6.4 -> current (pulls
 # fixed netty/vertx-http/jackson transitively), deferred until the backend-jvm
