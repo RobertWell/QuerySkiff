@@ -21,6 +21,18 @@ COPY --from=frontend /fe-dist ./src/main/resources/META-INF/resources/queryskiff
 RUN mvn -q -B -DskipTests package
 
 FROM eclipse-temurin:21-jre
+# Ship the base's security fixes, not the base as tagged: the runtime scan found openssl
+# CVE-2026-84782 (HIGH, fixed in 3.5.5-1ubuntu3.6) on eclipse-temurin:21-jre before the tag
+# caught up (job 15154, 2026-09-30). Same bounded-retry shape as the rest of the fleet
+# (HEL-528): the apt mirror mid-sync 404s/size-mismatches, so one attempt is not a verdict.
+RUN set -eu; ok=0; \
+    for attempt in 1 2 3; do \
+      if apt-get update && apt-get -y --fix-missing upgrade; then ok=1; break; fi; \
+      echo "apt attempt ${attempt} failed (mirror index mid-sync?) - retrying in 20s"; \
+      sleep 20; \
+    done; \
+    test "$ok" = 1; \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /w/target/quarkus-app/ ./
 # DuckDB's httpfs extension is fetched at first INSTALL; place it in the

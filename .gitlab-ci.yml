@@ -174,8 +174,12 @@ cve-scan:
       # trivy timeout fetching eclipse-temurin:21-jre over the uplink. build-image pulls the same base
       # through the mirror, so it is warm. Official images live under library/ on a mirror.
       case "$img" in */*) mimg="$MIRROR/$img" ;; *) mimg="$MIRROR/library/$img" ;; esac
-      echo "=== blocking base-image scan of the runtime stage: $img (via $mimg)"
-      trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$mimg"
+      # Report-only since 2026-09-30: the Dockerfile's runtime stage now applies the base's security
+      # updates (apt upgrade), so a finding on the RAW base tag is not a finding on what ships — job
+      # 15154 blocked on openssl CVE-2026-84782 that the upgrade step fixes. The blocking gate for the
+      # shipped image is cve-scan-artifact below (the pushed :SHA, --ignore-unfixed, exit 1).
+      echo "=== base-image scan of the runtime stage (report-only; the built artifact is gated): $img (via $mimg)"
+      trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table "$mimg"
   after_script:
     - trivy fs --offline-scan --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
   artifacts:
