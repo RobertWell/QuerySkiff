@@ -113,6 +113,26 @@ frontend-e2e:
 # the weekly schedule (new CVEs arrive without commits). Uses the trivy image
 # from Docker Hub (LAN mirror) instead of downloading the binary from GitHub —
 # that download reset on three repos' jobs on 2026-09-27 (HEL-529).
+# HEL-529: trivy's vulnerability DB (~60 MiB) and Java index (~930 MiB) come from hello-sre's daily
+# package-registry mirror (scripts/ci/trivy-db-mirror.sh → generic package trivy-db/latest), fetched
+# in-cluster with the job token — this project is on hello-sre's job-token allowlist. Without it the
+# base-image scan downloaded the Java index from mirror.gcr.io over the uplink and died on a
+# connection reset (job 15122) or its 40-minute timeout (job 15076). fetch_trivy_dbs falls back to
+# the live download when the mirror is absent, stale (>3 days) or corrupt, so a broken mirror is
+# slow, never wrong or silently green. The scans then run with --skip-db-update
+# --skip-java-db-update when the mirror answered (TRIVY_DB_SOURCE=mirror), live otherwise.
+.trivy_dbs_from_mirror: &trivy_dbs_from_mirror
+  - |
+    set -e
+    apk add --no-cache -q curl python3 git >/dev/null
+    rm -rf hello-sre && git init -q hello-sre && cd hello-sre
+    git -c credential.helper='!f() { echo username=gitlab-ci-token; echo "password=$CI_JOB_TOKEN"; }; f' fetch -q --depth 1 "http://gitlab.gitlab.svc.cluster.local/root/hello-sre.git" "$HELLO_SRE_REF"
+    git checkout -q FETCH_HEAD; [ "$(git rev-parse HEAD)" = "$HELLO_SRE_REF" ] || { echo "ERROR: hello-sre did not resolve to the pinned $HELLO_SRE_REF"; exit 2; }
+    cd "$CI_PROJECT_DIR"
+    . hello-sre/scripts/ci/trivy-db-fetch.sh
+    if fetch_trivy_dbs 1; then echo "--- trivy DBs from the hello-sre mirror"; echo "TRIVY_SKIP_DB_UPDATE=true" >> trivy-db.env; echo "TRIVY_SKIP_JAVA_DB_UPDATE=true" >> trivy-db.env
+    else echo "--- mirror unavailable: trivy downloads its DBs live"; : > trivy-db.env; fi
+
 cve-scan:
   stage: test
   image:
@@ -127,12 +147,16 @@ cve-scan:
     TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
     TRIVY_TIMEOUT: 40m
     TRIVY_SKIP_VERSION_CHECK: "true"
+    TRIVY_VERSION: "0.71.2"
+    HELLO_SRE_REF: "4933c7f46d04563d4521bb69725b53fb8ab49b20"
     MIRROR: "10.152.183.230:5000"
   cache:
     key: trivy-dbs
     paths: [.trivycache]
   script:
     - trivy --version
+    - *trivy_dbs_from_mirror
+    - set -a; . ./trivy-db.env; set +a
     - |
       # --offline-scan: trivy otherwise resolves every Maven POM from Central to build
       # the dependency tree and Central answered 429 Too Many Requests on the first run
@@ -234,10 +258,14 @@ cve-scan-artifact:
     # Read the pushed image back through the LAN pull-through cache rather than from Docker Hub over
     # the uplink (see cve-scan). The cache proxies any docker.io repository, ours included.
     MIRROR: "10.152.183.230:5000"
+    TRIVY_VERSION: "0.71.2"
+    HELLO_SRE_REF: "4933c7f46d04563d4521bb69725b53fb8ab49b20"
   cache:
     key: trivy-dbs
     paths: [.trivycache]
   script:
+    - *trivy_dbs_from_mirror
+    - set -a; . ./trivy-db.env; set +a
     - echo "=== artefact scan of $IMAGE_REF (via $MIRROR)"
     - trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output queryskiff-artifact-cve.json "$MIRROR/$IMAGE_REF"
     - trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --ignorefile .trivyignore.yaml --format table "$MIRROR/$IMAGE_REF"
