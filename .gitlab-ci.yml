@@ -127,6 +127,7 @@ cve-scan:
     TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
     TRIVY_TIMEOUT: 40m
     TRIVY_SKIP_VERSION_CHECK: "true"
+    MIRROR: "10.152.183.230:5000"
   cache:
     key: trivy-dbs
     paths: [.trivycache]
@@ -144,8 +145,13 @@ cve-scan:
       # Only the RUNTIME base (the last FROM) ships; node/maven are build stages that
       # never reach the registry, and each is a ~1 GiB pull on this link.
       img=$(grep -E '^FROM ' backend-jvm/Dockerfile | tail -1 | awk '{print $2}')
-      echo "=== blocking base-image scan of the runtime stage: $img"
-      trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$img"
+      # Pull the layers through the LAN pull-through cache (hello-sre registry-mirror, plain HTTP,
+      # fixed ClusterIP), not straight from Docker Hub: job 15076 (2026-09-30) spent its whole 40-minute
+      # trivy timeout fetching eclipse-temurin:21-jre over the uplink. build-image pulls the same base
+      # through the mirror, so it is warm. Official images live under library/ on a mirror.
+      case "$img" in */*) mimg="$MIRROR/$img" ;; *) mimg="$MIRROR/library/$img" ;; esac
+      echo "=== blocking base-image scan of the runtime stage: $img (via $mimg)"
+      trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format table "$mimg"
   after_script:
     - trivy fs --offline-scan --scanners vuln --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format json --output trivy-full.json . || true
   artifacts:
@@ -225,13 +231,16 @@ cve-scan-artifact:
     TRIVY_TIMEOUT: 40m
     TRIVY_SKIP_VERSION_CHECK: "true"
     IMAGE_REF: "$REGISTRY_NAMESPACE/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
+    # Read the pushed image back through the LAN pull-through cache rather than from Docker Hub over
+    # the uplink (see cve-scan). The cache proxies any docker.io repository, ours included.
+    MIRROR: "10.152.183.230:5000"
   cache:
     key: trivy-dbs
     paths: [.trivycache]
   script:
-    - echo "=== artefact scan of $IMAGE_REF"
-    - trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output queryskiff-artifact-cve.json "$IMAGE_REF"
-    - trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --ignorefile .trivyignore.yaml --format table "$IMAGE_REF"
+    - echo "=== artefact scan of $IMAGE_REF (via $MIRROR)"
+    - trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output queryskiff-artifact-cve.json "$MIRROR/$IMAGE_REF"
+    - trivy image --insecure --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --ignorefile .trivyignore.yaml --format table "$MIRROR/$IMAGE_REF"
   artifacts:
     when: always
     paths: [queryskiff-artifact-cve.json]
