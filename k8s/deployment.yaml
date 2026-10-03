@@ -48,8 +48,12 @@ spec:
           # (bouncycastle 1.77 -> 1.84). First image published by GitLab CI
           # (project root/queryskiff, pipeline 1558) instead of by hand — the
           # hand-built path is why prod sat on a Dec-2023 platform.
-          # Rollback = @sha256:a89f2d657072 (the pre-bump prod image).
-          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:2de753bc4df6aa6b61870fe3f5f4346428b6647e42aec7eda4c765f5e5ff8e6f
+          # 2026-10-04: pipeline 2284 (cb5739c): Quarkus 3.38.1 -> 3.40.1 (jackson 2.21.7,
+          # BouncyCastle 1.86 from the BOM; CVE-2026-68497/89407/89425/91776/91777), runtime
+          # stage applies the base's security updates (openssl CVE-2026-84782). Artifact
+          # scan on the pushed image: 0 OS findings, 0 jar findings. GitLab-only CI.
+          # Rollback = @sha256:2de753bc4df6aa6b61870fe3f5f4346428b6647e42aec7eda4c765f5e5ff8e6f
+          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:4f953a050ae9ec9b8258ab1f9cfd8d6e23123148db3278f4117117bc98ac3ae4
           # IfNotPresent is correct with a digest: the digest IS the identity, so
           # a re-pull can only ever fetch the same bytes. Always would just add a
           # registry round-trip per restart.
