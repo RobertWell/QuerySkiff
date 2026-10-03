@@ -124,7 +124,9 @@ frontend-e2e:
 .trivy_dbs_from_mirror: &trivy_dbs_from_mirror
   - |
     set -e
-    apk add --no-cache -q curl python3 git >/dev/null
+    # Bounded retry (HEL-528 shape): the Alpine CDN index fetch hit a transient DNS error in hello-stock on
+    # 2026-10-03 and killed a scan before trivy ran.
+    ok=0; for attempt in 1 2 3; do apk add --no-cache -q curl python3 git >/dev/null 2>&1 && { ok=1; break; }; echo "apk attempt $attempt failed - retrying in 15s"; sleep 15; done; [ "$ok" = 1 ] || { echo "ERROR: apk could not install curl/python3/git after 3 attempts"; exit 2; }
     rm -rf hello-sre && git init -q hello-sre && cd hello-sre
     git -c credential.helper='!f() { echo username=gitlab-ci-token; echo "password=$CI_JOB_TOKEN"; }; f' fetch -q --depth 1 "http://gitlab.gitlab.svc.cluster.local/root/hello-sre.git" "$HELLO_SRE_REF"
     git checkout -q FETCH_HEAD; [ "$(git rev-parse HEAD)" = "$HELLO_SRE_REF" ] || { echo "ERROR: hello-sre did not resolve to the pinned $HELLO_SRE_REF"; exit 2; }
