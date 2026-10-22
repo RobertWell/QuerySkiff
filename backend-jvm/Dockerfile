@@ -33,6 +33,11 @@ RUN set -eu; ok=0; \
     done; \
     test "$ok" = 1; \
     rm -rf /var/lib/apt/lists/*
+# The base image ships Canonical's `pebble` service manager as a standalone Go binary (/usr/bin/pebble, no
+# package owns it, so `apt-get upgrade` never updates it). Built with go1.27.1, it carries fixable Go
+# stdlib HIGHs (CVE-2026-78667, fix 1.26.9 / 1.27.2) that blocked cve-scan-artifact from 2026-10-12 on.
+# Nothing here runs it — the container's command is `java -jar` — so it is removed, not waited on.
+RUN rm -f /usr/bin/pebble
 WORKDIR /app
 COPY --from=build /w/target/quarkus-app/ ./
 # DuckDB's httpfs extension is fetched at first INSTALL; place it in the
