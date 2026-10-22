@@ -2,8 +2,9 @@
 
 PoC executed 2026-07-30 on the LAN box: single-node Trino 476 (docker, host
 network, 3G heap) against the live MinIO, the live Postgres system of record,
-and the legacy Oracle XE. Configs in `deploy/trino/` (secrets redacted),
-benchmark harness + raw numbers in `deploy/trino/poc/`.
+and the legacy Oracle XE. The PoC configs were removed in HEL-197 (git history before
+it; the deployed Trino is hello-sre `hello-trino/apps/hello-trino/manifests/`); the
+benchmark harness + raw numbers stay in `deploy/trino/poc/`.
 
 ## 1. What was PROVEN (not assumed)
 
@@ -93,7 +94,7 @@ preview path; removed from the *workspace/join* execution path only.
 
 ## 3. Migration + rollback (design Q10), if/when triggered
 
-1. Deploy Trino from `deploy/trino/` as a GitOps app (single
+1. Deploy Trino as a GitOps app (done: hello-sre `hello-trino`, HEL-163; single
    coordinator, 3–4 G heap; workers only if scans demand).
 2. Add a registration service endpoint (organize prefix → sniff schema via
    DuckDB → `CREATE TABLE`), keeping dataset ids opaque (HEL-90 contract).
