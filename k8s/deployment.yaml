@@ -52,8 +52,11 @@ spec:
           # BouncyCastle 1.86 from the BOM; CVE-2026-68497/89407/89425/91776/91777), runtime
           # stage applies the base's security updates (openssl CVE-2026-84782). Artifact
           # scan on the pushed image: 0 OS findings, 0 jar findings. GitLab-only CI.
-          # Rollback = @sha256:2de753bc4df6aa6b61870fe3f5f4346428b6647e42aec7eda4c765f5e5ff8e6f
-          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:4f953a050ae9ec9b8258ab1f9cfd8d6e23123148db3278f4117117bc98ac3ae4
+          # 2026-10-24 (HEL-718): pipeline 2669 (823cca5): base image's unused pebble (Go) binary dropped
+          # (Go stdlib CVE-2026-78667) and the rebuild picks up curl 8.18.0-1ubuntu2.8 (CVE-2026-92392).
+          # Artifact scan job 18611 on the pushed image passed.
+          # Rollback = @sha256:4f953a050ae9ec9b8258ab1f9cfd8d6e23123148db3278f4117117bc98ac3ae4
+          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:9390a60fd5002172fc94a66c9895a94ca6b03e3b98bbd85b0c19ec5a64c553ad
           # IfNotPresent is correct with a digest: the digest IS the identity, so
           # a re-pull can only ever fetch the same bytes. Always would just add a
           # registry round-trip per restart.
