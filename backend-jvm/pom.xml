@@ -33,6 +33,20 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- HEL-718 (2026-10-27): the nightly prod rescan flags the transitive guava 33.6.0-jre
+           (CVE-2026-102554, fixed 33.7.2) and snappy-java 1.1.10.8 (CVE-2026-108106,
+           CVE-2026-93451, fixed 1.1.10.9) that the Trino client path pulls in. Managed here
+           until the platform BOM / trino-jdbc move past them. -->
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.7.2-jre</version>
+      </dependency>
+      <dependency>
+        <groupId>org.xerial.snappy</groupId>
+        <artifactId>snappy-java</artifactId>
+        <version>1.1.10.9</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
