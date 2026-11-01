@@ -136,6 +136,10 @@ frontend-e2e:
     else echo "--- mirror unavailable: trivy downloads its DBs live"; : > trivy-db.env; fi
 
 cve-scan:
+  # HEL-665: one heavy-I/O job (image build / scan / validate) at a time in this project; a job waiting
+  # for the group is not running, so its timeout does not tick. Two such jobs overlapping a
+  # start-of-job write burst cost the k8s datastore its lease writes (10-31 21:40Z, 11-01 00:03Z).
+  resource_group: lan-heavy-io
   stage: test
   image:
     name: aquasec/trivy:0.71.2
@@ -194,6 +198,7 @@ cve-scan:
     - if: $CI_COMMIT_BRANCH
 
 build-image:
+  resource_group: lan-heavy-io
   stage: build
   image: docker:27
   timeout: 40 minutes
@@ -254,6 +259,7 @@ build-image:
 # :SHA so new CVEs are caught without a commit. HIGH/CRITICAL with a fix block
 # (the register .trivyignore.yaml lists accepted ones); unfixed are reported.
 cve-scan-artifact:
+  resource_group: lan-heavy-io
   stage: build
   image:
     name: aquasec/trivy:0.71.2
