@@ -4,13 +4,17 @@ cancellation behavior. Uses the REST client (what QuerySkiff's JDBC/HTTP
 integration would see)."""
 import concurrent.futures as cf
 import json
+import os
 import statistics
 import sys
 import time
 
 import trino
 
-HOST, PORT = "localhost", 8090
+# The 2026-07-30 PoC Trino listened on localhost:8090; the recorded *_results.json come from it. The
+# deployed Trino (hello-sre hello-trino, ns trino) listens on 8080 — set TRINO_HOST/TRINO_PORT to point
+# a re-run at it (HEL-197).
+HOST, PORT = os.environ.get("TRINO_HOST", "localhost"), int(os.environ.get("TRINO_PORT", "8090"))
 
 
 def conn():
