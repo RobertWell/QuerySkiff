@@ -59,8 +59,11 @@ spec:
           # snappy-java 1.1.10.9 (CVE-2026-108106/93451) managed in the pom; dompurify 3.4.17 overridden
           # under monaco-editor (GHSA-cg2g-xh64-v4q7). Artifact scan job 20642 on the pushed image passed;
           # digest read back from the registry (:01f66f0e).
-          # Rollback = @sha256:9390a60fd5002172fc94a66c9895a94ca6b03e3b98bbd85b0c19ec5a64c553ad
-          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:8e51a471f502608c4b52b26f02580016d24636166469c38d17d373bcbfc38ee9
+          # 2026-11-09 (HEL-832): pipeline 3450 (5357c39), a fresh-base rebuild with no source change: the
+          # base's apt / libapt-pkg7.0 fix (2 fixable HIGH -> 0). Artifact scan job 24589 passed; digest read
+          # back from the registry (:5357c393).
+          # Rollback = @sha256:8e51a471f502608c4b52b26f02580016d24636166469c38d17d373bcbfc38ee9
+          image: docker.io/roguerzzz123/queryskiff-jvm@sha256:b66bd851ca288b63294c003b63f6206f71da0659268fd473a66145cd9565d15d
           # IfNotPresent is correct with a digest: the digest IS the identity, so
           # a re-pull can only ever fetch the same bytes. Always would just add a
           # registry round-trip per restart.
