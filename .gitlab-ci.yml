@@ -221,13 +221,21 @@ build-image:
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
+  # HEL-841: the Maven repository backend-tests filled one stage earlier, read-only here. Without it the
+  # image build downloaded every dependency again (982 s) and the job hit its 40-min timeout on 11-09, so
+  # cve-scan-artifact was skipped for 2.5 days.
+  cache:
+    key: queryskiff-m2
+    paths: [.m2/repository]
+    policy: pull
   script:
     - |
       set -e
       for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
       IMAGE="$REGISTRY_NAMESPACE/$IMAGE_NAME"; TAG="$CI_COMMIT_SHORT_SHA"
-      echo "=== build $IMAGE:$TAG"
-      docker build --pull -t "$IMAGE:$TAG" -f backend-jvm/Dockerfile .
+      mkdir -p .m2/repository   # an empty cache (first run, evicted) builds as before
+      echo "=== build $IMAGE:$TAG (Maven cache: $(du -sh .m2/repository | cut -f1))"
+      docker build --pull --build-context m2=.m2/repository -t "$IMAGE:$TAG" -f backend-jvm/Dockerfile .
       # (1) prove the built image actually starts before it can be promoted
       echo "=== smoke: run the entrypoint inside the image"
       docker run --rm --entrypoint sh "$IMAGE:$TAG" -c \

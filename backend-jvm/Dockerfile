@@ -9,9 +9,16 @@ RUN npm install --no-audit --no-fund
 COPY frontend/ ./
 RUN npx vite build --outDir /fe-dist --emptyOutDir
 
+# The Maven repository backend-tests already filled (GitLab cache queryskiff-m2). HEL-841: without it
+# `dependency:go-offline` took 982 s and build-image hit its 40-min timeout, so cve-scan-artifact never ran.
+# CI passes it in with `--build-context m2=.m2/repository`, which replaces this empty stage; a plain local
+# build gets nothing and downloads as before.
+FROM scratch AS m2
+
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /w
 COPY backend-jvm/pom.xml ./
+COPY --from=m2 / /root/.m2/repository/
 # warm the dependency cache before sources so code edits don't re-download
 RUN mvn -q -B dependency:go-offline || true
 COPY backend-jvm/src ./src

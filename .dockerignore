@@ -1,0 +1,5 @@
+# The Maven cache goes in as its own build context (m2), never as part of the main one.
+.m2/
+.git/
+frontend/node_modules/
+frontend/.npm/
