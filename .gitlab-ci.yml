@@ -33,8 +33,10 @@ backend-tests:
   stage: test
   image: maven:3.9-eclipse-temurin-21
   timeout: 40 minutes
+  # One cache per branch (HEL-841): build-image feeds main's into the released image, so an MR or a branch
+  # must never be able to write it.
   cache:
-    key: queryskiff-m2
+    key: queryskiff-m2-$CI_COMMIT_REF_SLUG
     paths: [.m2/repository]
   script:
     - mvn -f backend-jvm/pom.xml -B -Dmaven.repo.local=.m2/repository test
@@ -223,9 +225,10 @@ build-image:
     DOCKER_TLS_CERTDIR: ""
   # HEL-841: the Maven repository backend-tests filled one stage earlier, read-only here. Without it the
   # image build downloaded every dependency again (982 s) and the job hit its 40-min timeout on 11-09, so
-  # cve-scan-artifact was skipped for 2.5 days.
+  # cve-scan-artifact was skipped for 2.5 days. Only main's cache (this job runs on main only): what a
+  # branch or an MR downloads never reaches a released image.
   cache:
-    key: queryskiff-m2
+    key: queryskiff-m2-$CI_DEFAULT_BRANCH
     paths: [.m2/repository]
     policy: pull
   script:
