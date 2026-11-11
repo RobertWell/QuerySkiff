@@ -33,10 +33,11 @@ backend-tests:
   stage: test
   image: maven:3.9-eclipse-temurin-21
   timeout: 40 minutes
-  # One cache per branch (HEL-841): build-image feeds main's into the released image, so an MR or a branch
-  # must never be able to write it.
+  # One cache per ref, protected refs apart (HEL-841): build-image feeds main's into the released image, so
+  # an MR or a branch must never be able to write it. A slug is not unique (a branch `Main` slugs to `main`);
+  # CI_COMMIT_REF_PROTECTED is set by GitLab, true only on a protected ref.
   cache:
-    key: queryskiff-m2-$CI_COMMIT_REF_SLUG
+    key: queryskiff-m2-$CI_COMMIT_REF_PROTECTED-$CI_COMMIT_REF_SLUG
     paths: [.m2/repository]
   script:
     - mvn -f backend-jvm/pom.xml -B -Dmaven.repo.local=.m2/repository test
@@ -228,7 +229,7 @@ build-image:
   # cve-scan-artifact was skipped for 2.5 days. Only main's cache (this job runs on main only): what a
   # branch or an MR downloads never reaches a released image.
   cache:
-    key: queryskiff-m2-$CI_DEFAULT_BRANCH
+    key: queryskiff-m2-true-$CI_DEFAULT_BRANCH   # protected main's (main is protected; else an empty cache)
     paths: [.m2/repository]
     policy: pull
   script:
