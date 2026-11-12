@@ -57,7 +57,7 @@ backend-tests:
 # Playwright suite cannot provide.
 frontend-tests:
   stage: test
-  image: node:20-bookworm-slim
+  image: node:24-bookworm-slim   # HEL-842: Node 20 is EOL (2026-04-30)
   timeout: 30 minutes
   cache:
     key:

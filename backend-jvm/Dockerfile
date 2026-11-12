@@ -2,7 +2,7 @@
 # build → JRE runtime. Mirrors the Python image's shape: same frontend bundle,
 # same env contract (QUERYSKIFF_*/MINIO_*), same port. Build context = repo root:
 #   docker build -f backend-jvm/Dockerfile -t queryskiff-backend-jvm .
-FROM node:20-slim AS frontend
+FROM node:24-slim AS frontend
 WORKDIR /fe
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --no-audit --no-fund
